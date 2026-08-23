@@ -1,6 +1,6 @@
 # Lab 01 — Secure AWS Foundation
 
-**Status:** 📝 Planejamento concluído — implementação pendente
+**Status:** 🚧 Implementação em andamento — bootstrap do backend Terraform concluído, código do lab ainda não iniciado
 
 ## SCS-C03
 - Domínio/Fase: Fase 0 — Foundation
@@ -125,8 +125,8 @@ Padrão: `{projeto}-{lab}-{tipo-recurso}-{detalhe}[-{az}]`, com `awssec` como ab
 ## Implementação
 
 ### Terraform
-- **Layout:** `terraform/modules/` (módulos reutilizáveis: vpc, iam-role-ec2, security-group...) compostos em `terraform/environments/lab01/` (root module com state próprio).
-- **Backend:** S3 com locking nativo (`use_lockfile = true`, Terraform 1.10+), sem DynamoDB. O bucket do backend é criado uma única vez fora do ciclo de vida do lab (bootstrap) e nunca é destruído junto com o Lab 01.
+- **Layout:** root module único em `terraform/environments/lab01/` (state próprio). `terraform/modules/` fica reservado para quando houver um segundo consumidor real de algum componente — ver [ADR-008](../../../docs/decisions.md#adr-008--terraform-root-module-único-no-lab-01-sem-terraformmodules-ainda).
+- **Backend:** S3 com locking nativo (`use_lockfile = true`, Terraform 1.10+), sem DynamoDB. Bucket `awssec-tfstate-230650392331` criado uma única vez fora do ciclo de vida do lab (bootstrap) e nunca é destruído junto com o Lab 01 — ver [setup-backend-bootstrap.md](../../../docs/setup-backend-bootstrap.md).
 - **Referência entre labs:** Lab 01 publica seus outputs (VPC ID, subnet IDs, etc.) no **SSM Parameter Store** (`/awssec/lab01/...`). Os demais labs leem por lá — não via `terraform_remote_state` — para não expor o state inteiro do Lab 01 a labs downstream (princípio de exposição mínima).
 - Código Terraform em si: _(a definir na implementação)_
 

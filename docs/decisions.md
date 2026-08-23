@@ -118,3 +118,23 @@ Registro das decisões arquiteturais do projeto, no formato problema → alterna
 **Alternativas consideradas:** manter a fundação sempre ativa pelos meses de duração do projeto.
 
 **Trade-offs:** esforço de reaplicar a cada sessão, em troca de eliminar o custo fixo do NAT Gateway (~US$ 32/mês) nos períodos sem estudo ativo.
+
+---
+
+## ADR-008 — Terraform: root module único no Lab 01, sem `terraform/modules/` ainda
+
+**Lab:** 01 (decisão vale para todo o projeto até que a condição de extração apareça)
+**Status:** Aceito
+
+**Contexto:** o planejamento original (seção Implementação do README do Lab 01) previa módulos reutilizáveis desde o início (`vpc`, `iam-role-ec2`, `security-group`). Na prática, dentro do Lab 01, cada componente (VPC, Security Group, IAM Role, EC2, S3) tem exatamente um consumidor — o próprio lab01. Uma divisão temática alternativa (`compute`/`network`/`security`/`data`) também foi cogitada, mas revelou dependências reais entre módulos (a IAM Role e a endpoint policy do VPC Gateway Endpoint de S3 precisam do ARN do bucket, que sairia do módulo de dados) e agruparia recursos de natureza distinta — Security Group é controle de rede, IAM Role é identidade — sob um único rótulo genérico.
+
+**Decisão:** manter todo o Lab 01 em um único root module (`terraform/environments/lab01/`), sem `terraform/modules/` por enquanto. Regra adotada para o projeto: só extrair um módulo quando houver um **segundo consumidor real** (não hipotético) — mesmo princípio de não criar abstração antes de precisar dela.
+
+**Exceção conhecida:** o CIDR `10.0.0.0/16` do Lab 01 foi reservado dentro do bloco `10.0.0.0/8` prevendo que labs futuros (14, 19) vão precisar de VPC própria — `vpc` já tem um segundo consumidor conhecido, mesmo que ainda não implementado. Candidato natural a ser o primeiro módulo extraído, quando esse lab futuro for de fato construído (não antes).
+
+**Alternativas consideradas:**
+
+- Módulos granulares por tipo de recurso desde o início (`vpc`, `iam-role-ec2`, `security-group`) — plano original do README, adiado por não ter reaproveitamento real ainda.
+- Divisão temática (`compute`, `network`, `security`, `data`) — descartada por misturar recursos de natureza diferente no mesmo módulo e criar dependências cruzadas (`data` → `network`/`security` via ARN do bucket) sem ganho de reuso correspondente.
+
+**Trade-offs:** menos boilerplate (sem `variables.tf`/`outputs.tf` de módulo, sem blocos `module`) e um único lugar pra ler o código do Lab 01. Em troca, se um segundo consumidor real aparecer, vai exigir refatoração (mover recursos pra dentro de um módulo) — custo aceito conscientemente, adiado até ser necessário.

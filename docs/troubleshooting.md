@@ -59,3 +59,34 @@ Registro dos episódios reais de troubleshooting do projeto, seguindo o processo
 **Validação:** com `AdministratorAccess` (permission set original, já revertido no TS-001), Billing e Cost Explorer passaram a carregar normalmente.
 
 **Lição:** ao contrário da maioria dos serviços AWS, Billing não segue o modelo padrão "toda permissão vem de IAM policy" em contas mais antigas — existe um gate extra fora do IAM, só alterável pelo root. Relevante pro Domínio 6 (Governança) do SCS-C03: nem todo controle de acesso na AWS é modelado como IAM policy.
+
+---
+
+## TS-003 — SSM Parameter Store rejeita prefixo `/awssec/...`
+
+**Lab:** 01 — primeiro `terraform apply` do lab
+**Status:** ✅ Resolvido
+
+**Sintoma:** `terraform apply` criou 29 dos 38 recursos planejados sem erro (VPC, subnets, IGW, NAT, rotas, VPC endpoint, EC2, IAM, S3) e falhou nos 9 `aws_ssm_parameter`, todos com o mesmo erro:
+
+```text
+Error: creating SSM Parameter (/awssec/lab01/vpc_id): operation error SSM: PutParameter,
+https response error StatusCode: 400, api error AccessDeniedException:
+No access to reserved parameter name: awssec/lab01/vpc_id.
+```
+
+**Hipóteses consideradas:**
+
+1. Falta de permissão IAM para `ssm:PutParameter` (mas o resto da role é `AdministratorAccess`, pouco provável).
+2. Algum limite de conta (nº de parâmetros, tamanho) sendo excedido.
+3. O nome do parâmetro colide com algo reservado pela própria AWS.
+
+**Coleta de evidências:** o erro é `AccessDeniedException`, não `ValidationException` (descarta limite de tamanho/quantidade), e o texto é explícito: "No access to **reserved parameter name**". Isso aponta direto pra hipótese 3.
+
+**Causa raiz:** o SSM Parameter Store reserva, para uso interno da AWS, qualquer nome de parâmetro cujo início (removendo a barra inicial) comece com `aws` ou `ssm`, case-insensitive — independente do que vem depois. O prefixo do projeto, `awssec`, começa literalmente com `aws`, então `/awssec/lab01/vpc_id` cai nessa reserva e é rejeitado antes mesmo de avaliar IAM policy.
+
+**Correção:** trocar o prefixo dos parâmetros de `/awssec/lab01/...` para `/lab01/...` — removendo o `awssec` do path (redundante de qualquer forma: essa Parameter Store inteira já pertence a este projeto, mesma lógica já usada na ADR-005 para não repetir `Environment` no nome dos recursos). Atualizado em `terraform/environments/lab01/ssm.tf`, na ADR-004 e no README do Lab 01.
+
+**Validação:** reaplicado só os 9 `aws_ssm_parameter` faltantes (state incremental preservou os outros 29) — `Apply complete! Resources: 9 added, 0 changed, 0 destroyed`, todos com id `/lab01/...`.
+
+**Lição:** o prefixo `awssec`, usado em todo o resto do projeto (buckets, VPC, IAM, tags) sem problema, não é seguro por padrão dentro do SSM Parameter Store especificamente — é o único serviço, até agora, com uma lista de nomes reservados que colide com a convenção de naming do projeto.

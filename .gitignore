@@ -42,4 +42,5 @@ terraform.rc
 # Sergei
 models
 plan.out
+plan.txt
 agents.md

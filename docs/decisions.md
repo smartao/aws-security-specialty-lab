@@ -62,7 +62,7 @@ Registro das decisões arquiteturais do projeto, no formato problema → alterna
 
 - Backend remoto em S3, com locking nativo via conditional writes (`use_lockfile = true`, Terraform 1.10+) — sem tabela DynamoDB.
 - O bucket do backend é criado uma única vez fora do ciclo de vida de qualquer lab (bootstrap) e nunca é destruído.
-- Labs consomem outputs uns dos outros via **SSM Parameter Store** (`/awssec/lab01/...`), não via `terraform_remote_state`.
+- Labs consomem outputs uns dos outros via **SSM Parameter Store** (`/lab01/...`), não via `terraform_remote_state`. Prefixo não pode ser `/awssec/lab01/...` como planejado originalmente — `awssec` colide com o prefixo reservado `aws*` do SSM Parameter Store (ver TS-003 em `docs/troubleshooting.md`).
 
 **Alternativas consideradas:**
 

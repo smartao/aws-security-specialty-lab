@@ -127,7 +127,7 @@ Padrão: `{projeto}-{lab}-{tipo-recurso}-{detalhe}[-{az}]`, com `awssec` como ab
 ### Terraform
 - **Layout:** root module único em `terraform/environments/lab01/` (state próprio). `terraform/modules/` fica reservado para quando houver um segundo consumidor real de algum componente — ver [ADR-008](../../../docs/decisions.md#adr-008--terraform-root-module-único-no-lab-01-sem-terraformmodules-ainda).
 - **Backend:** S3 com locking nativo (`use_lockfile = true`, Terraform 1.10+), sem DynamoDB. Bucket `awssec-tfstate-230650392331` criado uma única vez fora do ciclo de vida do lab (bootstrap) e nunca é destruído junto com o Lab 01 — ver [setup-backend-bootstrap.md](../../../docs/setup-backend-bootstrap.md).
-- **Referência entre labs:** Lab 01 publica seus outputs (VPC ID, subnet IDs, etc.) no **SSM Parameter Store** (`/awssec/lab01/...`). Os demais labs leem por lá — não via `terraform_remote_state` — para não expor o state inteiro do Lab 01 a labs downstream (princípio de exposição mínima).
+- **Referência entre labs:** Lab 01 publica seus outputs (VPC ID, subnet IDs, etc.) no **SSM Parameter Store** (`/lab01/...` — não `/awssec/lab01/...` como planejado inicialmente, ver [TS-003](../../../docs/troubleshooting.md)). Os demais labs leem por lá — não via `terraform_remote_state` — para não expor o state inteiro do Lab 01 a labs downstream (princípio de exposição mínima).
 - Código Terraform em si: _(a definir na implementação)_
 
 ### AWS CLI

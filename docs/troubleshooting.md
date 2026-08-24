@@ -90,3 +90,39 @@ No access to reserved parameter name: awssec/lab01/vpc_id.
 **Validação:** reaplicado só os 9 `aws_ssm_parameter` faltantes (state incremental preservou os outros 29) — `Apply complete! Resources: 9 added, 0 changed, 0 destroyed`, todos com id `/lab01/...`.
 
 **Lição:** o prefixo `awssec`, usado em todo o resto do projeto (buckets, VPC, IAM, tags) sem problema, não é seguro por padrão dentro do SSM Parameter Store especificamente — é o único serviço, até agora, com uma lista de nomes reservados que colide com a convenção de naming do projeto.
+
+---
+
+## TS-004 — Falha proposital: EC2 em subnet isolada não registra no SSM
+
+**Lab:** 01 — exercício de troubleshooting proposital (já identificado no planejamento original do lab)
+**Status:** ✅ Resolvido
+**Recursos:** `terraform/environments/lab01/troubleshoot_isolated.tf` (temporário, fora da arquitetura permanente do lab)
+
+**Sintoma:** instância `aws_instance.isolated_test`, criada de propósito na subnet `Isolated-A`, aparece como "Not connected" no Session Manager (console) e não aparece em `aws ssm describe-instance-information` (retorna `null`).
+
+**Hipóteses consideradas (levantadas durante a investigação):**
+
+1. A subnet isolada não tem rota de saída (nem via NAT, por desenho da ADR-001) — o agente SSM não consegue alcançar os endpoints públicos do serviço.
+2. Faltam VPC Endpoints que permitam esse tráfego sem sair da rede AWS.
+
+**Coleta de evidências:**
+
+- `aws ssm describe-instance-information` com filtro no InstanceId retornou `null` — confirma que a instância nunca completou o registro (não é uma sessão caída, é ausência total de handshake).
+- Route table da subnet isolada (`aws_route_table.isolated`) só tem a rota `local` automática, sem `0.0.0.0/0` para NAT ou IGW — confirmado por desenho, não por engano.
+
+**Teste:** criar os VPC Interface Endpoints para `ssm`, `ssmmessages` e `ec2messages` na subnet isolada, com Security Group dedicado liberando 443/TCP a partir do SG da EC2 (`sg-ec2-app`). Mesmo com os 3 endpoints em estado `available` e toda a configuração de rede/SG correta, o registro continuou `null` por vários minutos.
+
+**Causa raiz (duas causas, não uma):**
+
+1. **Estrutural:** SSM não é um dos dois serviços com suporte a Gateway Endpoint (só S3 e DynamoDB têm) — exige Interface Endpoint, que depende de ENI + Private DNS dentro da subnet, não de uma entrada de rota. Sem os 3 endpoints (`ssm` para registro/heartbeat, `ssmmessages` para o canal de dados da sessão, `ec2messages` para o canal de comandos), não há caminho de rede possível a partir de uma subnet sem rota de saída.
+2. **Operacional:** o agente SSM já vinha falhando em se conectar desde o boot da instância (endpoints não existiam ainda) e caiu num ciclo de retry mais espaçado — mesmo depois da rede ficar correta, não reconectou sozinho dentro de alguns minutos de espera.
+
+**Correção:**
+
+1. Criar os 3 VPC Interface Endpoints + Security Group dedicado (não reaproveitar o SG da EC2 — semânticas diferentes).
+2. `aws ec2 reboot-instances --instance-ids i-073fbdb0b8367e892` — força o agente a subir do zero, já com o caminho de rede disponível, em vez de esperar o próximo ciclo de retry.
+
+**Validação:** `describe-instance-information` retornou `PingStatus: Online` após o reboot; comando remoto via `ssm send-command` (`whoami` → `root`) executado com sucesso — acesso administrativo completo, sem SSH, sem rota de internet.
+
+**Lição:** dois aprendizados empilhados. (1) Nem todo VPC Endpoint é igual — Gateway Endpoint (rota, grátis, só S3/DynamoDB) e Interface Endpoint (ENI + Private DNS, cobrado por hora, todo o resto dos serviços) resolvem o mesmo problema de forma completamente diferente, e a subnet isolada só pode contar com o segundo. (2) Corrigir a rede não é garantia de recuperação imediata de um agente que já estava em ciclo de falha — vale sempre validar se o processo/serviço do lado do host precisa de um empurrão (restart/reboot) depois que a causa raiz de rede é corrigida.

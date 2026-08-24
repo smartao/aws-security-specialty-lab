@@ -138,28 +138,55 @@ Padrão: `{projeto}-{lab}-{tipo-recurso}-{detalhe}[-{az}]`, com `awssec` como ab
 - Comandos relevantes documentados em `awscli/` dentro da pasta do lab.
 
 ## Testes
-_(a definir — após implementação)_
+
+Validação feita via CLI, campo a campo (não só "rodou sem erro"):
+
+- `terraform validate` / `plan` / `apply` limpos — 38 recursos, 0 warnings.
+- VPC: `CidrBlock = 10.0.0.0/16`, `State = available`, `EnableDnsSupport`/`EnableDnsHostnames = true` (via `describe-vpc-attribute`, não `describe-vpcs` — esse último não traz esses campos).
+- EC2 (`app_a`): `State = running`, `PrivateIpAddress` dentro do bloco Private-A, `PublicIpAddress = null`, instance profile correto.
+- NAT Gateway: `State = available`, na subnet Public-A.
+- SSM Parameter Store: 9 parâmetros em `/lab01/...` confirmados via `get-parameter`.
+- Acesso administrativo: sessão via `aws ssm send-command` (`AWS-RunShellScript`) executada com sucesso na `app_a` — comando remoto sem SSH, sem porta exposta.
 
 ## Falha ou ataque proposital
-_(a definir — candidato já identificado no planejamento: EC2 numa subnet isolada tentando se registrar no SSM sem VPC Interface Endpoints — falha de rede proposital para praticar troubleshooting)_
+
+Candidato identificado no planejamento, executado e resolvido: EC2 (`aws_instance.isolated_test`) criada de propósito na subnet Isolated-A, sem nenhuma rota de saída (por desenho, ADR-001) e sem VPC Interface Endpoints para SSM — o agente nunca completa o registro (`describe-instance-information` retorna `null`, console mostra "Not connected").
+
+Detalhe completo do ciclo Sintoma → Hipóteses → Causa raiz → Correção → Validação em [TS-004](../../../docs/troubleshooting.md#ts-004--falha-proposital-ec2-em-subnet-isolada-não-registra-no-ssm).
 
 ## Detecção e investigação
 _(a definir — este lab ainda não tem CloudTrail/CloudWatch; capacidade de detecção começa no Lab 02)_
 
 ## Troubleshooting
-_(a definir — após implementação)_
+
+Log completo em [docs/troubleshooting.md](../../../docs/troubleshooting.md). Episódios deste lab:
+
+| ID | Resumo | Status |
+|---|---|---|
+| TS-001 | Credenciais SSO inválidas após troca de permission set no console | ✅ Resolvido |
+| TS-002 | Billing/Cost Explorer inacessível mesmo com policy administrativa total (toggle de conta root) | ✅ Resolvido |
+| TS-003 | SSM Parameter Store rejeita prefixo `/awssec/...` (nome reservado) | ✅ Resolvido |
+| TS-004 | Falha proposital: EC2 isolada não registra no SSM (Interface Endpoint + reboot do agente) | ✅ Resolvido |
 
 ## Remediação
-_(a definir — após implementação)_
+
+Da falha proposital (TS-004): criação de 3 VPC Interface Endpoints (`ssm`, `ssmmessages`, `ec2messages`) + Security Group dedicado na subnet Isolated-A, seguido de `aws ec2 reboot-instances` para forçar o agente SSM a reconectar (não recuperou sozinho dentro de alguns minutos após a rede ficar correta).
+
+Escopo: recursos ficam isolados em `terraform/environments/lab01/troubleshoot_isolated.tf`, fora da arquitetura permanente do lab — a subnet isolada continua reservada para dados, sem SSM/Interface Endpoints no desenho final (ver seção Custos e cleanup).
 
 ## Evidências
-_(a definir — após implementação)_
+
+Pasta [evidence/lab01/](../../../evidence/lab01/):
+
+- `ts-002-billing-iam-access-toggle.png` — toggle "IAM user and role access to Billing information" desativado (causa raiz do TS-002).
 
 ## Custos e cleanup
 
 **Restrição do projeto:** teto de **US$ 100 / 6 meses** (não é mensal — é absoluto para todo o projeto).
 
 **Componente de custo relevante neste lab:** NAT Gateway (~US$ 0,045/h de existência + processamento por GB), rodando 24/7 enquanto a VPC existir.
+
+**Custo extra temporário (exercício TS-004):** os 3 VPC Interface Endpoints (~US$ 0,01/h cada + processamento por GB) e a segunda EC2 (`isolated_test`) em `troubleshoot_isolated.tf` somam ao custo enquanto existirem — não fazem parte do desenho permanente do lab, ver seção Remediação.
 
 **Decisão:** destruir a fundação ao final de **toda** sessão de estudo (`terraform destroy`), e reaplicar no início da próxima. Viável sem dor porque os demais labs consomem os outputs via SSM Parameter Store (item acima) — ao recriar o Lab 01, os valores são republicados automaticamente.
 

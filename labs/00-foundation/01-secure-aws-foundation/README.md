@@ -1,6 +1,6 @@
 # Lab 01 — Secure AWS Foundation
 
-**Status:** 🚧 Implementação em andamento — bootstrap do backend Terraform concluído, código do lab ainda não iniciado
+**Status:** ✅ Concluído — implementado, validado via CLI, exercício de troubleshooting proposital (TS-004) executado e documentado, `terraform destroy` aplicado ao final da sessão de estudo (ADR-007). Reaplicar (`terraform apply`) no início da próxima sessão.
 
 ## SCS-C03
 - Domínio/Fase: Fase 0 — Foundation

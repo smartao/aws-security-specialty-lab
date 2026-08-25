@@ -138,3 +138,102 @@ Registro das decisões arquiteturais do projeto, no formato problema → alterna
 - Divisão temática (`compute`, `network`, `security`, `data`) — descartada por misturar recursos de natureza diferente no mesmo módulo e criar dependências cruzadas (`data` → `network`/`security` via ARN do bucket) sem ganho de reuso correspondente.
 
 **Trade-offs:** menos boilerplate (sem `variables.tf`/`outputs.tf` de módulo, sem blocos `module`) e um único lugar pra ler o código do Lab 01. Em troca, se um segundo consumidor real aparecer, vai exigir refatoração (mover recursos pra dentro de um módulo) — custo aceito conscientemente, adiado até ser necessário.
+
+---
+
+## ADR-009 — Log bucket persistente, fora do state do Lab 02
+
+**Lab:** 02 — Centralized Logging Foundation
+**Status:** Aceito e implementado
+
+**Contexto:** o Lab 02 segue o mesmo padrão de destroy/recreate por sessão de estudo do Lab 01 (ADR-007). O bucket S3 que recebe CloudTrail e VPC Flow Logs, porém, guarda evidência/histórico — destruí-lo junto com o resto do lab apagaria o rastro de auditoria que os Labs 06 (Security Analytics) e 10 (Forensics) precisam consultar.
+
+**Decisão:** o log bucket (`awssec-logs-230650392331`) é criado **uma única vez, via AWS CLI**, inteiramente fora do state Terraform do Lab 02 — mesmo padrão de bootstrap já usado para o bucket de backend do Terraform (ADR-004). Ver [setup-log-bucket-bootstrap.md](setup-log-bucket-bootstrap.md).
+
+**Alternativas consideradas:** manter o bucket dentro do state do Lab 02 com `lifecycle { prevent_destroy = true }`.
+
+**Trade-offs:** `prevent_destroy` foi descartado porque falha o `plan`/`destroy` **inteiro** do Lab 02 (não apenas daquele recurso) — quebraria o hábito de destroy/recreate de todo o resto do lab a cada sessão. Bootstrap via CLI resolve isso, ao custo de um recurso que o Terraform do Lab 02 não gerencia nem enxerga (precisa ser referenciado por nome fixo, não por `aws_s3_bucket.log.id`).
+
+---
+
+## ADR-010 — CloudTrail multi-region, com data events S3 e dual delivery (S3 + CloudWatch Logs)
+
+**Lab:** 02
+**Status:** Aceito
+
+**Contexto:** um trail single-region cria uma lacuna óbvia — um atacante com credenciais roubadas escolheria deliberadamente operar numa região não monitorada. Além disso, actions de dados em S3 (`GetObject`/`PutObject`) não aparecem em management events por padrão, e o destino do trail determina quais ferramentas de investigação enxergam esses eventos depois.
+
+**Decisão:**
+
+- Trail **multi-region** (`awssec-lab02-trail`).
+- **Data events de S3 habilitados**, escopados a "todos os buckets, atuais e futuros" (advanced event selector, ARN wildcard `arn:aws:s3`), **excluindo explicitamente o próprio log bucket** (evita eventos autorreferenciais do `PutObject` que o próprio CloudTrail gera ao entregar logs).
+- **Entrega dupla: S3 + CloudWatch Logs** — S3 para retenção barata/durável (Athena, Lab 06); CloudWatch Logs para metric filters e CloudWatch Logs Insights (Lab 06) em tempo quase real.
+- **Metric filter + alarm de uso da conta root incluído neste lab** (não adiado) — usa a entrega para CloudWatch Logs.
+
+**Alternativas consideradas:** trail single-region; sem data events (só management events); entrega só para S3.
+
+**Trade-offs:** mais eventos = mais custo de ingestão (pequeno, dado o volume de um lab de estudo) e mais superfície pra configurar exclusões corretamente (esquecer de excluir o próprio log bucket geraria ruído/custo). Ganho: nenhuma lacuna de "região não monitorada" nem de "atividade de dados invisível".
+
+**Nota — correção de raciocínio durante a sessão de design:** a entrega dual (S3+CloudWatch) e o escopo `ALL` do Flow Logs (ADR-012) foram inicialmente justificados por "o GuardDuty do Lab 03 precisa disso" — premissa **incorreta**, corrigida na mesma sessão. Ver observação abaixo.
+
+> **GuardDuty (e provavelmente outros serviços de detecção nativos da AWS) tem seu próprio pipeline de dados, independente**, para management events do CloudTrail, VPC Flow Logs e DNS query logs — ele **não** consome os destinos (S3/CloudWatch Logs) configurados neste lab. As decisões acima continuam corretas, mas pelo motivo certo: servem à **investigação própria** do usuário (Labs 06, 10, 12), não são pré-requisito para o Lab 03 funcionar. Vale checar se o mesmo padrão se aplica a Security Hub e Detective quando esses labs chegarem, em vez de assumir caso a caso.
+
+---
+
+## ADR-011 — Lifecycle Standard-IA aos 30 dias, sem Glacier
+
+**Lab:** 02
+**Status:** Aceito
+
+**Contexto:** o log bucket é persistente (ADR-009) e cresce indefinidamente sem alguma política de custo. A opção mais barata de longo prazo seria uma transição para Glacier.
+
+**Decisão:** transição para **Standard-IA aos 30 dias**, sem nenhuma camada Glacier.
+
+**Alternativas consideradas:** transição adicional para Glacier (ex: aos 90 dias).
+
+**Trade-offs:** Standard-IA custa mais por GB que Glacier, mas **Athena não consulta objetos em classe Glacier** sem um restore explícito antes — e o Lab 06 (Security Analytics) precisa consultar exatamente este histórico via Athena. Ir para Glacier quebraria essa consulta silenciosamente (o objeto continua "existindo", só não é lido). Dado que a conta tem horizonte de 6 meses (teto de custo do projeto), o ganho de ir mais fria que Standard-IA não compensou a complexidade adicionada.
+
+---
+
+## ADR-012 — VPC Flow Logs: destino S3+CloudWatch, tráfego `ALL` (não só `REJECT`)
+
+**Lab:** 02
+**Status:** Aceito
+
+**Contexto:** Flow Logs no VPC do Lab 01 (lido via SSM `/lab01/vpc_id`) podem ser configurados só para tráfego rejeitado (`REJECT`), reduzindo volume/ruído, ou para todo o tráfego (`ALL`).
+
+**Decisão:** `ALL`, com destino S3+CloudWatch Logs (mesmo racional de dual-delivery da ADR-010).
+
+**Alternativas consideradas:** `REJECT`-only (opção inicial, revertida durante a mesma sessão de design).
+
+**Trade-offs:** mais volume de log (mais custo de ingestão/armazenamento, ainda pequeno neste escopo) em troca de não cegar o Lab 10 (Forensics + Root Cause) exatamente onde ele mais precisa enxergar: um ataque bem-sucedido, por definição, anda sobre tráfego **`ACCEPT`ado** (ex: callback de C2 numa porta 443 liberada). `REJECT`-only mostraria só as tentativas que já falharam — o interessante para forense é o que passou.
+
+---
+
+## ADR-013 — Encryption SSE-S3 no log bucket, CMK adiado para o Lab 17
+
+**Lab:** 02
+**Status:** Aceito
+
+**Contexto:** o log bucket (ADR-009) pode usar SSE-S3 (chave gerenciada pela AWS, gratuita) ou SSE-KMS com Customer Managed Key (CMK, ~US$ 1/mês + custo por chamada, permite key policy separada de quem pode decriptar).
+
+**Decisão:** **SSE-S3** por agora.
+
+**Alternativas consideradas:** SSE-KMS com CMK dedicada já neste lab.
+
+**Trade-offs:** CMK adicionaria uma camada real de controle de acesso à decriptação dos logs (interessante em produção), mas antecipa conteúdo do **Lab 17 — KMS + Encryption** (Key Policies, grants, multi-region keys) antes do lab que formalmente estuda isso — inconsistente com o princípio de progressão do projeto (construir a camada de segurança progressivamente, não tudo de uma vez). SSE-S3 também mantém consistência com o bucket de backend do Terraform (ADR-004), que já usa o mesmo padrão. Revisitar quando o Lab 17 for implementado: candidato natural a migrar este bucket para SSE-KMS com CMK, formalizando key policy dedicada para leitura de logs de auditoria.
+
+---
+
+## ADR-014 — Athena query-results bucket é ephemeral (dentro do state do Lab 02)
+
+**Lab:** 02
+**Status:** Aceito
+
+**Contexto:** diferente do log bucket (ADR-009), o bucket que recebe resultados de queries do Athena (usado no Lab 06) não guarda evidência — guarda a saída, regenerável, de uma consulta contra o histórico persistente de logs.
+
+**Decisão:** bucket de resultados do Athena vive dentro do state Terraform normal do Lab 02, seguindo o ciclo de destroy/recreate por sessão de estudo (ADR-007), com `force_destroy = true` (mesmo padrão do bucket de dados do Lab 01).
+
+**Alternativas consideradas:** tratá-lo com a mesma persistência do log bucket.
+
+**Trade-offs:** nenhum — resultado de query é trivialmente regenerável reexecutando a mesma query contra o log bucket persistente. Não há razão para pagar o custo operacional extra de mantê-lo fora do state.

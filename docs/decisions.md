@@ -119,6 +119,12 @@ Registro das decisões arquiteturais do projeto, no formato problema → alterna
 
 **Trade-offs:** esforço de reaplicar a cada sessão, em troca de eliminar o custo fixo do NAT Gateway (~US$ 32/mês) nos períodos sem estudo ativo.
 
+**Atualização (2026-08-25) — Budget revisado após perda do Free Tier:** ao ativar o IAM Identity Center como *organization instance* (ver [ADR-006](#adr-006--autenticação-humana-via-iam-identity-center-sso-não-iam-user)), a conta passou a ser management account de uma AWS Organization — um dos gatilhos oficiais de upgrade automático de Free Plan para Paid Plan. A conta 230650392331 recebeu o email de upgrade em 2026-08-25. Com isso, o buffer do Free Tier que sustentava a suposição original (custo ~$0 fora dos componentes intencionais como o NAT Gateway) deixa de existir — qualquer uso passa a ser cobrado desde o primeiro centavo.
+
+Diante disso, o desenho do Budget foi simplificado: em vez do teto absoluto de US$ 100/6 meses com alertas em 50/80/100% (que exigiria `TimeUnit=ANNUALLY` com `TimePeriod` limitado, para não resetar mensalmente), optou-se por um **AWS Budget mensal simples** — `awssec-monthly-budget`, limite de US$ 10/mês, notificações `ACTUAL`/`ABSOLUTE_VALUE` em US$ 5 e US$ 10. Prioriza detectar drift de gasto cedo (mensal, resposta rápida) sobre modelar com precisão o teto absoluto do projeto. O teto de US$ 100/6 meses continua valendo como limite real do projeto (ver seção de custos de cada lab), só não é mais o que o Budget da AWS modela diretamente.
+
+Criado via CLI, fora do state de qualquer lab (mesmo padrão do bucket de backend e do bucket de logs — ver [setup-budget.md](setup-budget.md)).
+
 ---
 
 ## ADR-008 — Terraform: root module único no Lab 01, sem `terraform/modules/` ainda

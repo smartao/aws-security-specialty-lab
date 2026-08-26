@@ -10,6 +10,7 @@
 #   ./scripts/check-deployed-resources.sh                    # notifica só se houver recursos
 #   ./scripts/check-deployed-resources.sh --always            # notifica mesmo se estiver tudo limpo
 #   ./scripts/check-deployed-resources.sh --no-notify          # só imprime no terminal, nunca notifica
+#   ./scripts/check-deployed-resources.sh --quiet               # só imprime no terminal se houver recursos; se estiver limpo, não imprime nada
 #   ./scripts/check-deployed-resources.sh --profile outro-nome
 set -euo pipefail
 
@@ -18,11 +19,13 @@ ENV_DIR="$REPO_ROOT/terraform/environments"
 PROFILE="${AWS_PROFILE:-conta-pes}"
 ALWAYS_NOTIFY=false
 NO_NOTIFY=false
+QUIET=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --always) ALWAYS_NOTIFY=true; shift ;;
         --no-notify) NO_NOTIFY=true; shift ;;
+        --quiet) QUIET=true; shift ;;
         --profile) PROFILE="$2"; shift 2 ;;
         *) echo "Argumento desconhecido: $1" >&2; exit 1 ;;
     esac
@@ -58,7 +61,7 @@ for lab_dir in "$ENV_DIR"/*/; do
     if ! aws --profile "$PROFILE" s3api get-object \
         --bucket "$bucket" --key "$key" ${region:+--region "$region"} \
         "$state_file" >/dev/null 2>&1; then
-        echo "[$lab] sem state em s3://$bucket/$key (nunca aplicado?)."
+        $QUIET || echo "[$lab] sem state em s3://$bucket/$key (nunca aplicado?)."
         rm -f "$state_file"
         continue
     fi
@@ -68,9 +71,9 @@ for lab_dir in "$ENV_DIR"/*/; do
         DIRTY_LABS+=("$lab")
         summary="$(jq -r '.resources[] | "\(.type).\(.name)"' "$state_file" | sort -u | head -10 | paste -sd, -)"
         LAB_DETAILS["$lab"]="$count recurso(s): $summary"
-        echo "[$lab] ATENÇÃO: $count recurso(s) aplicado(s) — $summary"
+        echo "$lab: on"
     else
-        echo "[$lab] limpo (0 recursos no state)."
+        $QUIET || echo "[$lab] limpo (0 recursos no state)."
     fi
     rm -f "$state_file"
 done
@@ -84,7 +87,7 @@ if [[ ${#DIRTY_LABS[@]} -gt 0 ]]; then
     fi
     exit 2
 else
-    echo "Nenhum recurso aplicado encontrado em nenhum lab."
+    $QUIET || echo "Nenhum recurso aplicado encontrado em nenhum lab."
     if $ALWAYS_NOTIFY && ! $NO_NOTIFY; then
         notify-send -u low "Terraform check" "Tudo limpo — nenhum recurso AWS aplicado."
     fi

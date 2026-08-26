@@ -9,6 +9,7 @@
 # Uso:
 #   ./scripts/check-deployed-resources.sh                    # notifica só se houver recursos
 #   ./scripts/check-deployed-resources.sh --always            # notifica mesmo se estiver tudo limpo
+#   ./scripts/check-deployed-resources.sh --no-notify          # só imprime no terminal, nunca notifica
 #   ./scripts/check-deployed-resources.sh --profile outro-nome
 set -euo pipefail
 
@@ -16,10 +17,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_DIR="$REPO_ROOT/terraform/environments"
 PROFILE="${AWS_PROFILE:-conta-pes}"
 ALWAYS_NOTIFY=false
+NO_NOTIFY=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --always) ALWAYS_NOTIFY=true; shift ;;
+        --no-notify) NO_NOTIFY=true; shift ;;
         --profile) PROFILE="$2"; shift 2 ;;
         *) echo "Argumento desconhecido: $1" >&2; exit 1 ;;
     esac
@@ -29,7 +32,7 @@ command -v aws >/dev/null || { echo "aws CLI não encontrado no PATH." >&2; exit
 command -v jq  >/dev/null || { echo "jq não encontrado no PATH." >&2; exit 1; }
 
 if ! aws --profile "$PROFILE" sts get-caller-identity >/dev/null 2>&1; then
-    notify-send -u critical "Terraform check" "Credenciais do profile '$PROFILE' inválidas/expiradas." || true
+    $NO_NOTIFY || notify-send -u critical "Terraform check" "Credenciais do profile '$PROFILE' inválidas/expiradas." || true
     echo "Credenciais do profile '$PROFILE' inválidas. Rode 'aws configure --profile $PROFILE' e tente de novo." >&2
     exit 1
 fi
@@ -74,13 +77,15 @@ done
 
 if [[ ${#DIRTY_LABS[@]} -gt 0 ]]; then
     body="$(for lab in "${DIRTY_LABS[@]}"; do echo "• $lab: ${LAB_DETAILS[$lab]}"; done)"
-    notify-send -u critical -i dialog-warning \
-        "⚠ Terraform: recursos AWS ainda de pé" \
-        "$body"
+    if ! $NO_NOTIFY; then
+        notify-send -u critical -i dialog-warning \
+            "⚠ Terraform: recursos AWS ainda de pé" \
+            "$body"
+    fi
     exit 2
 else
     echo "Nenhum recurso aplicado encontrado em nenhum lab."
-    if $ALWAYS_NOTIFY; then
+    if $ALWAYS_NOTIFY && ! $NO_NOTIFY; then
         notify-send -u low "Terraform check" "Tudo limpo — nenhum recurso AWS aplicado."
     fi
 fi

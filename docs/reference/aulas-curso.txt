@@ -1,0 +1,288 @@
+Curso: Ultimate AWS Certified Security Specialty [NEW 2026] SCS-C03 (Udemy)
+
+#### Seção 3: Domain 1 - Detection
+
+5. Amazon GuardDuty
+6. Amazon GuardDuty - Findings & Automation
+7. Amazon GuardDuty - Multi-account Strategy
+8. Amazon GuardDuty - Advanced
+9. Security Hub Overview
+10. Security Hub - Advanced
+11. Amazon Detective
+12. Detective - Architectures
+13. Amazon Inspector
+14. Logging in AWS for Security and Compliance
+15. CloudWatch - Unified CloudWatch Agent - Overview
+16. AWS Console UI Update
+17. CloudWatch - Unified CloudWatch Agent - Hands On
+18. CloudWatch Unified Agent - Troubleshooting
+19. CloudWatch Logs
+20. CloudWatch Logs Hands On
+21. CloudWatch Alarms
+22. CloudWatch Alarms Hands On
+23. CloudWatch Contributor Insights
+24. Amazon EventBridge
+25. Amazon EventBridge - Hands On
+26. Amazon Athena
+27. Amazon Athena - Hands On
+28. Amazon Athena - Troubleshooting
+29. CloudTrail
+30. CloudTrail Hands On
+31. CloudTrail - Data Lake
+32. CloudTrail - EventBridge Integration
+33. CloudTrail for SysOps
+34. CloudTrail to CloudWatch Metrics Filter - Example
+35. CloudTrail - Integration with Athena
+36. Monitoring Account Activity
+37. Macie
+38. Macie - Advanced
+39. S3 Event Notifications
+40. S3 Event Notifications - Hands On
+41. VPC Flow Logs
+42. VPC Flow Logs Hands On
+43. VPC Flow Logs - Advanced
+44. VPC Traffic Mirroring
+45. VPC Traffic Mirroring - Architectures
+46. VPC Network Access Analyzer
+47. Route 53 - Query Logging
+48. OpenSearch
+49. OpenSearch - Advanced
+
+#### Seção 4: Domain 2 - Incidente Response
+
+50. Definitions & Terms
+51. Penetration Testing on AWS
+52. DDoS Simulation Testing on AWS
+53. Compromised AWS Resources
+54. Compromised AWS Credentials
+55. EC2 Key Pairs & Remediating Exposed EC2 Key Paris
+56. EC2 Instance Connect
+57. EC2 Serial Console
+58. Lost EC2 Key Pair - Linux
+59. Lost EC2 Key Pair - Windows
+60. EC2 Rescue Tool for Linux & Windows
+61. AWS Abuse Report
+62. Systems Manager Overview
+63. Start EC2 Instances with SSM Agent
+64. AWS Tags & SSM Resource Groups
+65. SSM Documents & SSM Run Command
+66. SSM Automations
+67. SSM Parameter Store Overview
+68. SSM Parameter Store Hands On (CLI)
+69. SSM Inventory & State Manager
+70. SSM Patch Manager and Maintenance Windows
+71. SSM Patch Manager and Maintenance Windows - Hands On
+72. SSM Session Manager Overview
+73. SSM Session Manager Hands On
+74. SSM Cleanup
+
+#### Seção 5: Domain 3 - Infrastructure Security
+75. Bastion Host
+76. Bastion Host - Hands On
+77. NAT Gateway
+78. NAT Gateway - Hands On
+79. Site to Site VPN
+80. Site to Site VPN - Hands On
+81. Client VPN
+82. Client VPN - Client Authentication Types
+83. VPC Peering
+84. VPC Peering - Hands On
+85. DNS Resolution Options in VPC
+86. DNS Resolution Options in VPC - Hands On
+87. VPC Endpoints - Overview
+88. VPC Endpoint Policies
+89. VPC Endpoint - Examples
+90. PrivateLink
+91. PrivateLink - Hands On
+92. NACL & Security Groups
+93. NACL & Security Groups - Hands On
+94. Security Groups Outbound Rules & Managed Prefixes
+95. Security Groups - Extras
+96. AWS Transit Gateway
+97. Direct Connect
+98. Direct Connect + S2S VPN
+99. CloudFront Overview
+100. CloudFront Hands On
+101. CloudFront - ALB/EC2 as an Origin
+102. CloudFront - Geo Restriction
+103. CloudFront - Signed URL & Cookies
+104. CloudFront - Signed URL & Cookies - Hands On
+105. CloudFront - Field Level Encryption
+106. CloudFront - Origin Access Control and Origin Access Identity (OAC & OAI)
+107. CloudFront - Other
+108. WAF - Web Application Firewall
+109. Shield
+110. AWS Firewall Manager
+111. WAF & Shield - Hands On
+112. WAF - Hands On
+113. AWS Shield Advanced - Metrics
+114. DDoS Attack Protection
+115. API Gateway
+116. API Gateway - Hands On
+117. API Gateway - Advanced
+118. AWS Artifact
+119. Route 53 - DNSSEC
+120. AWS Network Firewall
+121. AWS Network Firewall - Advanced
+122. Amazon SES
+
+#### Seção 6: Domain 4 - Identity and Access
+
+123. IAM Policies in Depth
+124. IAM Condition Operators
+125. IAM Global condition context keys
+126. IAM Permission Boundaries
+127. IAM Policy Evaluation Logic
+128. Identity-Based Policies vs. Resource-Based Policies
+129. ABAC (Attribute based access control)
+130. IAM MFA
+131. IAM Credentials Report
+132. IAM Roles and PassRole to Services
+133. IAM Roles Anywhere
+134. IAM Trust Policies
+135. IAM Security Tools
+136. IAM Security Tools - Hands On
+137. IAM Access Analyzer
+138. STS Overview
+139. STS Version 1 & Version 2
+140. STS External ID
+141. STS - Revoking IAM Role Temporary Security Credentials
+142. Sample SCP
+143. EC2 Instance Metadata Overview
+144. EC2 Instance Metadata - IMDSv1 vs IMDSv2
+145. S3 - Authorization Evaluation Process
+146. S3 - Cross Account Access and Canned ACL
+147. S3 - Samples S3 Bucket Policies
+148. S3 - VPC Endpoint Strategy
+149. S3 - Regain Access to Locked S3 Bucket
+150. S3 - Block Public Access Settings
+151. S3 Access Points
+152. S3 Access Points - Hands On
+153. S3 Multi-Region Access Points
+154. S3 Multi-Region Access Points - Hands On
+155. S3 CORS
+156. S3 CORS - Hands On
+157. S3 Access Logs
+158. S3 Access Logs - Permissions
+159. S3 Access Logs - Hands On
+160. Cognito User Pools
+161. Cognito Identity Pools
+162. Cognito User Pool User Groups
+163. Identity Federation & Cognito
+164. SAML 2.0 Metadata File Troubleshooting
+165. AWS IAM Identity Center
+166. AWS IAM Identity Center - Extras
+167. AWS Directory Services
+
+#### Seção 7: Domain 5 - Data Protection
+
+168. Encryption 101
+169. CloudHSM
+170. CloudHSM - Advanced
+171. KMS
+172. KMS Multi Region Key
+173. KMS Envelope Encryption
+174. KMS Key Rotation
+175. KMS Key Deletion
+176. KMS Key Policies Deep Dive
+177. KMS Grants
+178. KMS Condition Keys
+179. KMS Key Policies Evaluation Process
+180. KMS Key Cross-Account Access
+181. KMS Asymmetric Encryption
+182. KMS API Calls Limits and Data Key Caching
+183. KMS Encryption Context
+184. KMS with EBS
+185. EFS Encryption
+186. KMS with ABAC
+187. KMS with Parameter Store
+188. Secrets Manager
+189. Secrets Manager - Hands On
+190. Secrets Manager - Advanced
+191. S3 Encryption
+192. S3 Encryption Summary
+193. S3 Default Encryption
+194. S3 Bucket Policies Examples
+195. S3 Bucket Key
+196. Large File Upload to S3 with KMS Key
+197. S3 Batch Encryption
+198. S3 Object Lock & Glacier Vault Lock
+199. Glacier Vault Lock - Deep Dive
+200. Glacier Vault Lock - Hands On
+201. S3 Lifecycle Rules (with S3 Analytics)
+202. S3 Lifecycle Rules - Hands On
+203. S3 Replication
+204. S3 Replication - Hands On
+205. S3 Replication - Notes
+206. RDS & Aurora Security
+207. Elastic Load Balancing Overview
+208. Network Load Balancer Overview
+209. Network Load Balancer Advanced
+210. ELB Sticky Sessions
+211. ELB SSL Certificates
+212. ELB - SSL Certificates - Advanced
+213. Network Load Balancer - TLS Listeners
+214. AWS Certificate Manager (ACM)
+215. AWS Certificate Manager (ACM) - Hands On
+216. ACM - Advanced
+217. AWS Backup
+218. AWS Backup - Hands On
+219. Amazon Data Lifecycle Manager
+220. AWS Nitro Enclaves
+
+#### Seção 8: Domain 6 - Security Foundations and Governance
+221. Organizations
+222. Organizations - Hands On
+223. AWS Organizations - IAM Policies & Tag Policies
+224. AWS Control Tower
+225. AWS Config
+226. AWS Config - Hands On
+227. AWS Config - Remediation Examples
+228. AWS Config - Aggregators
+229. AWS Config - Conformance Packs
+230. AWS Config - Organizational Rules
+231. AWS Config - Use Cases
+232. Trusted Advisor + Hands On
+233. AWS Cost Explorer
+234. AWS Cost Anomaly Detection
+235. AWS Well-Architected Framework & Well-Architected Tool
+236. AWS Acceptable Use Policy (AUP)
+237. Audit Manager
+238. CloudFormation
+239. CloudFormation - Hands On
+240. CloudFormation - Service Role
+241. CloudFormation - Stack Policy
+242. CloudFormation - Dynamic References
+243. CloudFormation - Termination Protection
+244. CloudFormation - Drift
+245. CloudFormation Guard
+246. AWS Service Catalog
+247. AWS Resource Access Manager (AWS RAM)
+248. AWS Fault Injection Simulator (FIS)
+249. AWS Resilience Hub
+
+#### Seção 9: Other Services
+
+250. Elastic Container Registry (ECR)
+251. ECR Security
+252. ECS Secret Management
+253. EKS Concepts
+254. Lambda Security
+255. Lambda in VPC
+256. Lambda in VPC - Hands On
+257. Lambda Function URL
+258. Lambda Function URL - Hands On
+259. AWS Signer
+260. AWS Verified Access
+261. Glue Overview
+262. Glue Security
+263. Amazon WorkSpaces
+264. Amazon Workspaces - Security
+265. ASG Instance Refresh
+266. EBS - Data Volume Wiping
+267. CloudShell
+268. EC2 Image Builder
+269. EC2 Image Builder Hands On
+270. EC2 Image Builder - Troubleshooting
+271. Redshift Security
+272. DynamoDB - Time To Live (TTL)

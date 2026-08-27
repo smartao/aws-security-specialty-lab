@@ -127,7 +127,9 @@ Log completo em [docs/troubleshooting.md](../../../docs/troubleshooting.md). Epi
 
 ## Remediação
 
-_(a definir)_
+**TS-005 — assinatura SNS perdida:** criado `terraform/environments/lab02/terraform.tfvars` (gitignored) com `alarm_notification_email` persistido, em vez de depender de `-var` na linha de comando. `terraform apply` recriou só a `aws_sns_topic_subscription` faltante (1 recurso, 0 change, 0 destroy); assinatura confirmada via CLI (`SubscriptionArn` com ARN real, não mais `PendingConfirmation`/`Deleted`). Efeito colateral: como o e-mail agora é persistido, o próximo ciclo destroy/recreate (ADR-007) não volta a perder a notificação.
+
+**TS-006 — CloudTrail sem entrega no S3:** restaurada a condição `aws:SourceArn` nas statements `AWSCloudTrailAclCheck` e `AWSCloudTrailWrite` da bucket policy do log bucket, trocando o trail incorreto (`awssec-lab02-trail-old`) pelo real (`awssec-lab02-trail`), via `aws s3api put-bucket-policy`. Validado gerando uma chamada de API nova e monitorando `get-trail-status` até `LatestDeliveryAttemptSucceeded` avançar para depois da correção, com `LatestDeliveryError` desaparecendo do status.
 
 ## Evidências
 

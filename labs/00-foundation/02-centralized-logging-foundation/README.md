@@ -108,7 +108,9 @@ Validado campo a campo em 2026-08-26, logo após o `apply`:
 
 ## Falha ou ataque proposital
 
-_(a definir — candidatos identificados no design: CloudTrail sem logs por bucket policy divergente do nome do trail; Flow Logs sem entrega por IAM role incorreta; ver seção Troubleshooting do agents.md)_
+Executado: bucket policy do log bucket alterada de propósito, com a condição `aws:SourceArn` das statements do CloudTrail apontando para um trail inexistente (`awssec-lab02-trail-old`). Sintoma: trail continua `IsLogging: true`, mas `PutObject` no S3 falha com `AccessDenied` — nenhum objeto novo chega no bucket.
+
+Investigado de ponta a ponta pelo usuário, sem a causa revelada de antemão — `get-trail-status` → `describe-trails` → `get-bucket-policy`, corroborado por screenshot do console. Ciclo completo (sintoma → hipóteses → evidências → causa raiz → correção → validação) documentado em [TS-006](../../../docs/troubleshooting.md#ts-006--falha-proposital-cloudtrail-para-de-entregar-no-s3-bucket-policy-com-trail-errado).
 
 ## Detecção e investigação
 
@@ -121,6 +123,7 @@ Log completo em [docs/troubleshooting.md](../../../docs/troubleshooting.md). Epi
 | ID | Resumo | Status |
 |---|---|---|
 | TS-005 | Assinatura SNS do alarme de root usage perdida após ciclo destroy/apply (var não persistida) | ✅ Resolvido |
+| TS-006 | Falha proposital: CloudTrail para de entregar no S3 (bucket policy com trail errado) | ✅ Resolvido |
 
 ## Remediação
 
@@ -128,7 +131,10 @@ _(a definir)_
 
 ## Evidências
 
-_(a definir — capturar outputs de CLI e/ou screenshots do console: trail, flow logs, alarme, e-mail de confirmação SNS)_
+Pasta [evidence/lab02/](../../../evidence/lab02/):
+
+- `ts-006-cloudtrail-bucket-policy-investigation.md` — investigação completa do TS-006 (comandos AWS CLI + saídas): `get-trail-status` revelando `LatestDeliveryError: AccessDenied`, `describe-trails` confirmando o bucket de destino, `get-bucket-policy` expondo a condição `aws:SourceArn` divergente.
+- `ts-006-cloudtrail-console-bucket-access-denied.png` — console do CloudTrail mostrando "Bucket access denied — Fix policy" no trail, corroborando o diagnóstico por uma segunda via.
 
 ## Custos e cleanup
 

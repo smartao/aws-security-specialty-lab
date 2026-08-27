@@ -156,3 +156,30 @@ No access to reserved parameter name: awssec/lab01/vpc_id.
 **Validação:** `aws sns list-subscriptions-by-topic` retornou `SubscriptionArn` com um ARN real (não mais `PendingConfirmation` nem `Deleted`) para `sergei.martao@gmail.com`.
 
 **Lição:** variáveis Terraform passadas só via `-var` na CLI **não sobrevivem** ao próximo `apply`/`destroy` de outra sessão — qualquer valor que precise persistir através do ciclo de destroy/recreate (ADR-007) tem que ir para um arquivo `.tfvars` (gitignored, se sensível) ou um default explícito no código, nunca só na memória de quem digitou o comando. Vale revisar se outros labs futuros com notificação (Lab 09 — Automated Incident Response, por exemplo) têm o mesmo risco.
+
+---
+
+## TS-006 — Falha proposital: CloudTrail para de entregar no S3 (bucket policy com trail errado)
+
+**Lab:** 02 — exercício de troubleshooting proposital
+**Status:** ✅ Resolvido
+**Evidência:** [evidence/lab02/ts-006-cloudtrail-bucket-policy-investigation.md](../evidence/lab02/ts-006-cloudtrail-bucket-policy-investigation.md), [evidence/lab02/ts-006-cloudtrail-console-bucket-access-denied.png](../evidence/lab02/ts-006-cloudtrail-console-bucket-access-denied.png)
+
+**Sintoma:** o trail `awssec-lab02-trail` continuava com `IsLogging: true` no console e via CLI, mas nenhum objeto novo chegava no prefixo `CloudTrail/` do log bucket, mesmo com atividade de API gerada na conta.
+
+**Investigação (conduzida pelo usuário, sem a causa revelada de antemão):**
+
+1. `aws cloudtrail get-trail-status --name awssec-lab02-trail` → `LatestDeliveryError: "AccessDenied"` — primeiro sinal, aponta direto para permissão em vez de "trail desligado" ou "sem eventos".
+2. `aws cloudtrail describe-trails --trail-name-list awssec-lab02-trail` → confirmou o bucket de destino real (`awssec-logs-230650392331`), em vez de assumir.
+3. `aws s3api get-bucket-policy --bucket awssec-logs-230650392331` → encontrou a causa: as statements `AWSCloudTrailAclCheck` e `AWSCloudTrailWrite` tinham a condição `aws:SourceArn` apontando para `arn:aws:cloudtrail:us-east-1:230650392331:trail/awssec-lab02-trail-old` — um trail que não existe.
+4. Console (CloudTrail → Trails) corroborou de forma independente: status "Bucket access denied — Fix policy" na listagem do trail.
+
+**Causa raiz:** a bucket policy do log bucket (mantida fora do Terraform, ver ADR-009/setup-log-bucket-bootstrap.md) tinha o `aws:SourceArn` das duas statements do CloudTrail apontando para um nome de trail (`awssec-lab02-trail-old`) diferente do trail real (`awssec-lab02-trail`). Como a condição nunca batia, a `Allow` nunca se aplicava — *implicit deny* em `s3:PutObject`, mesmo o restante da policy (Flow Logs, deny insecure transport) permanecendo correto e não afetado.
+
+**Nuance de diagnóstico:** a primeira leitura da causa citou "o ARN do bucket está errado" — impreciso. O `Resource` das statements (ARN do bucket/prefixo) estava correto o tempo todo; o que estava errado era o **valor da condição** `aws:SourceArn`, que deveria referenciar o ARN do **trail**, não do bucket. Distinção relevante para o SCS-C03: `Resource` define o que a policy protege, `Condition` define quando a permissão se aplica.
+
+**Correção:** restaurar o valor correto do `aws:SourceArn` (`arn:aws:cloudtrail:us-east-1:230650392331:trail/awssec-lab02-trail`) nas duas statements, via `aws s3api put-bucket-policy`.
+
+**Validação:** nova chamada de API (`aws sts get-caller-identity`) gerada como evento de teste; `get-trail-status` voltou a mostrar `LatestDeliveryAttemptSucceeded` avançando para um timestamp posterior à correção, confirmando entrega restabelecida.
+
+**Lição:** este é exatamente o risco que já havia sido antecipado em `docs/setup-log-bucket-bootstrap.md` no momento do bootstrap ("se o nome do trail mudar, a bucket policy precisa ser reaplicada manualmente") — mas o exercício mostrou como o sintoma se manifesta na prática: o trail parece saudável em quase todos os campos (`IsLogging: true`), e só o campo `LatestDeliveryError` do `get-trail-status` denuncia o problema. Reforça por que este bucket ficar fora do Terraform (ADR-009) é uma decisão com trade-off real: nenhum `terraform plan` avisa sobre esse tipo de divergência, a validação tem que ser manual/CLI.

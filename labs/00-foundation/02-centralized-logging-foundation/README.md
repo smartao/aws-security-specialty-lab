@@ -1,6 +1,6 @@
 # Lab 02 — Centralized Logging Foundation
 
-**Status:** ✅ Implementado e validado via CLI campo a campo em 2026-08-26, com um episódio real de troubleshooting resolvido em 2026-08-27 (TS-005 — assinatura SNS perdida no ciclo destroy/apply). CloudTrail logando (`IsLogging=True`), Flow Logs `ACTIVE` (S3 + CloudWatch, `ALL`), assinatura do alarme de root usage confirmada. Falha proposital e evidências (screenshots) ainda pendentes.
+**Status:** ✅ Implementado e validado via CLI campo a campo em 2026-08-26. Dois episódios de troubleshooting resolvidos em 2026-08-27: **TS-005** (assinatura SNS do alarme de root usage perdida no ciclo destroy/apply — `var` não persistida) e **TS-006** (falha proposital: CloudTrail para de entregar no S3 por bucket policy com `aws:SourceArn` apontando para um trail inexistente). CloudTrail logando (`IsLogging=True`), Flow Logs `ACTIVE` (S3 + CloudWatch, `ALL`), assinatura do alarme de root usage confirmada. Falha proposital executada e investigada de ponta a ponta; evidências (CLI + screenshot do console) em [`evidence/lab02/`](../../../evidence/lab02/). **Pendente:** exercício aberto de detecção/investigação da seção homônima — adiado de propósito para ser feito junto com o Lab 03 (GuardDuty), quando houver um detector caçando os eventos.
 
 ## SCS-C03
 

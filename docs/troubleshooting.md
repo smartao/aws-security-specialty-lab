@@ -126,3 +126,33 @@ No access to reserved parameter name: awssec/lab01/vpc_id.
 **Validação:** `describe-instance-information` retornou `PingStatus: Online` após o reboot; comando remoto via `ssm send-command` (`whoami` → `root`) executado com sucesso — acesso administrativo completo, sem SSH, sem rota de internet.
 
 **Lição:** dois aprendizados empilhados. (1) Nem todo VPC Endpoint é igual — Gateway Endpoint (rota, grátis, só S3/DynamoDB) e Interface Endpoint (ENI + Private DNS, cobrado por hora, todo o resto dos serviços) resolvem o mesmo problema de forma completamente diferente, e a subnet isolada só pode contar com o segundo. (2) Corrigir a rede não é garantia de recuperação imediata de um agente que já estava em ciclo de falha — vale sempre validar se o processo/serviço do lado do host precisa de um empurrão (restart/reboot) depois que a causa raiz de rede é corrigida.
+
+---
+
+## TS-005 — Assinatura SNS do alarme de root usage perdida após ciclo destroy/apply do Lab 02
+
+**Lab:** 02 — Centralized Logging Foundation, entre a sessão de implementação (2026-08-26) e a sessão seguinte (2026-08-27)
+**Status:** ✅ Resolvido
+
+**Sintoma:** a assinatura por e-mail (`sergei.martao@gmail.com`) do tópico SNS `awssec-lab02-sns-security-alarms` (alarme de uso da conta root), confirmada com sucesso em 2026-08-26, tinha desaparecido por completo em 2026-08-27 — `aws sns list-subscriptions-by-topic` retornava lista vazia, mesmo o tópico continuando a existir com o mesmo ARN.
+
+**Hipóteses consideradas:**
+
+1. O token de confirmação expirou (descartada: janela padrão da AWS é 3 dias, o intervalo real foi de ~19h).
+2. O usuário clicou sem querer num link de "unsubscribe" no e-mail (ex: cabeçalho `List-Unsubscribe`, ação automática de algum filtro de e-mail).
+3. Um `terraform destroy`/`apply` do Lab 02 rodou nesse meio-tempo (fim/início de sessão de estudo, ADR-007) e recriou o tópico sem preservar a assinatura.
+
+**Coleta de evidências:** `aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventSource,AttributeValue=sns.amazonaws.com` (o próprio trail do Lab 02 já estava capturando esses eventos) mostrou:
+
+- `Unsubscribe` em `2026-08-26T10:15:10Z`, com `userAgent` contendo `terraform-provider-aws/6.61.0` — **a própria Terraform destruiu a assinatura**, não foi clique acidental em link nem expiração.
+- Perguntado diretamente, o usuário confirmou ter rodado o ciclo normal de `terraform destroy` (fim de sessão) + `terraform apply` (início da sessão seguinte) nesse intervalo.
+
+**Causa raiz:** `var.alarm_notification_email` só tinha sido passada via `-var="..."` na linha de comando do primeiro `apply` — nunca foi persistida em nenhum arquivo. No próximo `apply` (sem o `-var`), a variável voltou ao `default = ""`, `count = var.alarm_notification_email != "" ? 1 : 0` caiu para `0`, e o Terraform destruiu a `aws_sns_topic_subscription` silenciosamente — sem erro, sem aviso, porque do ponto de vista do Terraform é uma alteração de configuração legítima, não um bug.
+
+**Correção:** criar `terraform/environments/lab02/terraform.tfvars` (já coberto pelo `.gitignore` do projeto, `*.tfvars`) com `alarm_notification_email = "sergei.martao@gmail.com"` — agora qualquer `apply` (inclusive no próximo ciclo destroy/recreate) usa esse valor automaticamente, sem depender de lembrar de passar `-var` toda vez.
+
+**Complicador na validação:** depois de reaplicar e recriar a assinatura, `list-subscriptions-by-topic` mostrou `SubscriptionArn: "Deleted"` mesmo antes de qualquer clique — e o usuário recebeu um e-mail de "assinatura desativada" com um link de "Inscrever-se novamente". Ao clicar nesse segundo link, a confirmação foi concluída de fato (ARN real retornado, coincidindo com o ID gerado pelo `apply`). Não foi possível confirmar a causa exata desse passo intermediário via CloudTrail (o clique em link de confirmação/desativação do SNS é uma URL pública, sem SigV4/IAM — não gera evento de CloudTrail), mas o fluxo "e-mail de desativação → link de re-inscrição → confirmação" é um comportamento conhecido do SNS para assinaturas recém-criadas em um tópico que teve uma assinatura anterior recém-destruída para o mesmo endpoint.
+
+**Validação:** `aws sns list-subscriptions-by-topic` retornou `SubscriptionArn` com um ARN real (não mais `PendingConfirmation` nem `Deleted`) para `sergei.martao@gmail.com`.
+
+**Lição:** variáveis Terraform passadas só via `-var` na CLI **não sobrevivem** ao próximo `apply`/`destroy` de outra sessão — qualquer valor que precise persistir através do ciclo de destroy/recreate (ADR-007) tem que ir para um arquivo `.tfvars` (gitignored, se sensível) ou um default explícito no código, nunca só na memória de quem digitou o comando. Vale revisar se outros labs futuros com notificação (Lab 09 — Automated Incident Response, por exemplo) têm o mesmo risco.

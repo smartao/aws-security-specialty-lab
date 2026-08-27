@@ -1,6 +1,6 @@
 # Lab 02 — Centralized Logging Foundation
 
-**Status:** ✅ Implementado e validado via CLI campo a campo em 2026-08-26 — `terraform apply` de 22 recursos sem erros, CloudTrail logando (`IsLogging=True`), Flow Logs `ACTIVE` (S3 + CloudWatch, `ALL`), entrega confirmada no log bucket (`CloudTrail/`, `CloudTrail-Digest/`, `vpcflowlogs/`). Falha proposital, troubleshooting e evidências ainda pendentes.
+**Status:** ✅ Implementado e validado via CLI campo a campo em 2026-08-26, com um episódio real de troubleshooting resolvido em 2026-08-27 (TS-005 — assinatura SNS perdida no ciclo destroy/apply). CloudTrail logando (`IsLogging=True`), Flow Logs `ACTIVE` (S3 + CloudWatch, `ALL`), assinatura do alarme de root usage confirmada. Falha proposital e evidências (screenshots) ainda pendentes.
 
 ## SCS-C03
 
@@ -81,7 +81,7 @@ Validado campo a campo em 2026-08-25: versionamento `Enabled`, encryption `AES25
 - **Dependência do Lab 01:** o Flow Logs lê `/lab01/vpc_id` via `data "aws_ssm_parameter"` — **o Lab 01 precisa estar aplicado (`terraform apply`) antes do `terraform apply` do Lab 02**, senão o `plan` falha ao resolver esse data source.
 - **Log bucket:** lido via `data "aws_s3_bucket"` (não `resource`) — o Terraform do Lab 02 nunca gerencia nem destrói esse bucket (ADR-009).
 - **CloudTrail:** `aws_cloudtrail.main`, `advanced_event_selector` com dois blocos (management events + data events de S3 excluindo o log bucket via `not_starts_with`), entrega para `aws_cloudwatch_log_group.cloudtrail` (retenção 180 dias) via IAM role dedicada.
-- **Root account usage:** `aws_cloudwatch_log_metric_filter` com o pattern padrão CIS + `aws_cloudwatch_metric_alarm` + `aws_sns_topic` (assinatura por e-mail via `var.alarm_notification_email`).
+- **Root account usage:** `aws_cloudwatch_log_metric_filter` com o pattern padrão CIS + `aws_cloudwatch_metric_alarm` + `aws_sns_topic` (assinatura por e-mail via `var.alarm_notification_email`, persistida em `terraform.tfvars` — gitignored — desde o TS-005, para sobreviver ao ciclo destroy/recreate).
 - **VPC Flow Logs:** dois recursos `aws_flow_log` (um para CloudWatch, um para S3 — um único recurso não suporta os dois destinos ao mesmo tempo), `traffic_type = "ALL"`.
 - **Athena:** `aws_s3_bucket.athena_results`, ephemeral, `force_destroy = true` (ADR-014).
 - **SSM:** outputs publicados em `/lab02/...` (nome do trail, nomes dos log groups, nome dos buckets, ARN do tópico SNS).
@@ -97,7 +97,7 @@ Validado campo a campo em 2026-08-26, logo após o `apply`:
 - `aws ec2 describe-flow-logs` → 2 flow logs `ACTIVE` na VPC do Lab 01, um `s3` e um `cloud-watch-logs`, ambos `TrafficType: ALL`.
 - `aws logs describe-log-groups` → `retentionInDays: 180` nos dois log groups (`/aws/cloudtrail/awssec-lab02-trail`, `/aws/vpc-flow-logs/awssec-lab02`).
 - `aws cloudwatch describe-alarms` → alarme `awssec-lab02-alarm-root-usage` criado, estado `INSUFFICIENT_DATA` (esperado — sem uso de root ainda), `AlarmActions` apontando para o tópico SNS correto.
-- `aws sns list-subscriptions-by-topic` → assinatura por e-mail com `SubscriptionArn: PendingConfirmation` (aguardando clique no link de confirmação).
+- `aws sns list-subscriptions-by-topic` → assinatura por e-mail com `SubscriptionArn: PendingConfirmation` (aguardando clique no link de confirmação — depois perdida e recuperada, ver TS-005).
 - `aws s3 ls s3://awssec-logs-230650392331/AWSLogs/230650392331/` → prefixos `CloudTrail/`, `CloudTrail-Digest/`, `vpcflowlogs/` já presentes, confirmando entrega real no bucket.
 
 ## Testes
@@ -116,7 +116,11 @@ _(a definir — CloudTrail/Flow Logs estão de pé; exercício de detecção/inv
 
 ## Troubleshooting
 
-_(a definir — nenhum problema encontrado até aqui; o apply e a validação passaram de primeira)_
+Log completo em [docs/troubleshooting.md](../../../docs/troubleshooting.md). Episódio deste lab:
+
+| ID | Resumo | Status |
+|---|---|---|
+| TS-005 | Assinatura SNS do alarme de root usage perdida após ciclo destroy/apply (var não persistida) | ✅ Resolvido |
 
 ## Remediação
 

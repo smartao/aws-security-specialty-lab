@@ -92,7 +92,7 @@ Basta **habilitar o detector**. O Lab 02 continua valendo para a **sua** investi
 | `provider.tf` | região/profile via var, `default_tags` (`Lab = lab03`) |
 | `variables.tf` | `aws_region`, `aws_profile`, `finding_notification_email`, `finding_severity_threshold` (default 4) |
 | `data.tf` | só `aws_caller_identity` + `aws_region` — **nenhum** `aws_ssm_parameter` (sem dependência cross-lab, de propósito) |
-| `guardduty.tf` | `aws_guardduty_detector` (`finding_publishing_frequency = "FIFTEEN_MINUTES"`) + 2× `aws_guardduty_detector_feature` (`S3_DATA_EVENTS`, `EBS_MALWARE_PROTECTION`) |
+| `guardduty.tf` | `aws_guardduty_detector` (`finding_publishing_frequency = "FIFTEEN_MINUTES"`) + `aws_guardduty_detector_feature`: pin `ENABLED` em `S3_DATA_EVENTS` e `EBS_MALWARE_PROTECTION`, pin `DISABLED` em `EKS_AUDIT_LOGS`, `RDS_LOGIN_EVENTS`, `LAMBDA_NETWORK_LOGS`, `RUNTIME_MONITORING` (a AWS liga esses por default num detector novo — ver ADR-017) |
 | `findings.tf` | `aws_sns_topic` + `aws_sns_topic_policy` (EventBridge → `sns:Publish`) + `aws_sns_topic_subscription` (e-mail, `count` condicional) + `aws_cloudwatch_event_rule` (pattern `severity >= var`) + `aws_cloudwatch_event_target` (input transformer) |
 | `ssm.tf` | `/lab03/detector_id`, `/lab03/sns_topic_arn`, `/lab03/eventbridge_rule_name` |
 | `outputs.tf` | detector ID, SNS ARN, nome da regra, status dos 2 protection plans |
@@ -123,7 +123,7 @@ _(pendente de `terraform apply`)_ — roteiro:
 3. `aws guardduty list-detector-features` (ou `get-detector`) → `S3_DATA_EVENTS` e `EBS_MALWARE_PROTECTION` `ENABLED`.
 4. `aws sns list-subscriptions-by-topic` → assinatura de e-mail (após confirmar o link, `SubscriptionArn` com ARN real).
 5. `aws events describe-rule --name awssec-lab03-eventbridge-guardduty-findings` → `State = ENABLED`, pattern com `severity >= 4`.
-6. **Teste de encanamento:** `aws guardduty create-sample-findings --detector-id <id> --finding-types Backdoor:EC2/C&CActivity.B!DNS` → e-mail legível (via input transformer) chega em poucos minutos.
+6. **Teste de encanamento:** `aws guardduty create-sample-findings --detector-id <id> --finding-types 'Backdoor:EC2/C&CActivity.B!DNS'` → e-mail legível (via input transformer) chega em poucos minutos. **Aspas simples obrigatórias** — sem elas o `&` faz o zsh/bash colocar o comando em background e o `!` dispara history expansion, e nada é criado.
 7. `aws ssm get-parameters-by-path --path /lab03 --recursive` → 3 parâmetros.
 
 ## Falha ou ataque proposital

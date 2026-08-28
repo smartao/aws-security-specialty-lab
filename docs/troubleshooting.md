@@ -183,3 +183,57 @@ No access to reserved parameter name: awssec/lab01/vpc_id.
 **Validação:** nova chamada de API (`aws sts get-caller-identity`) gerada como evento de teste; `get-trail-status` voltou a mostrar `LatestDeliveryAttemptSucceeded` avançando para um timestamp posterior à correção, confirmando entrega restabelecida.
 
 **Lição:** este é exatamente o risco que já havia sido antecipado em `docs/setup-log-bucket-bootstrap.md` no momento do bootstrap ("se o nome do trail mudar, a bucket policy precisa ser reaplicada manualmente") — mas o exercício mostrou como o sintoma se manifesta na prática: o trail parece saudável em quase todos os campos (`IsLogging: true`), e só o campo `LatestDeliveryError` do `get-trail-status` denuncia o problema. Reforça por que este bucket ficar fora do Terraform (ADR-009) é uma decisão com trade-off real: nenhum `terraform plan` avisa sobre esse tipo de divergência, a validação tem que ser manual/CLI.
+
+---
+
+## TS-007 — Falha proposital: finding esperado do GuardDuty não gera alerta (suppression rule)
+
+**Lab:** 03 — GuardDuty, exercício de troubleshooting proposital (ADR-020, cenário A)
+**Status:** ✅ Resolvido
+**Evidência:** [evidence/lab03/](../evidence/lab03/)
+
+**Sintoma:** depois de gerar um finding `Backdoor:EC2/C&CActivity.B!DNS` (via `create-sample-findings`), nenhum e-mail chegou e o finding não apareceu na lista default do console / `list-findings`. O detector continuava `ENABLED`, a regra do EventBridge `ENABLED`, a assinatura SNS confirmada — todos os componentes do encanamento (já validados antes com o mesmo tipo de finding) aparentemente intactos.
+
+**Hipóteses consideradas:**
+
+1. Detector desligado ou feature relevante desabilitada (descartada: `get-detector` → `Status: ENABLED`, `DNS_LOGS: ENABLED`).
+2. Filtro de severidade da regra EventBridge engolindo o finding (descartada: `Backdoor:EC2/C&CActivity.B!DNS` é severidade 8.0, bem acima do `>= 4` — isso seria o TS-008, não este).
+3. Região errada na consulta (descartada: mesma região `us-east-1` do detector e da regra).
+4. Suppression rule / filtro com ação `ARCHIVE` arquivando o finding na geração.
+
+**Coleta de evidências:**
+
+- `list-findings` com `--finding-criteria '{"Criterion":{"type":{"Eq":["Backdoor:EC2/C&CActivity.B!DNS"]},"service.archived":{"Eq":["false"]}}}'` → não retornava o finding novo (só os antigos, pré-filtro).
+- **Mesma consulta com `"service.archived":{"Eq":["true"]}`** → o finding novo aparecia aqui: **existe, está arquivado**.
+- `aws cloudwatch get-metric-statistics --namespace AWS/Events --metric-name Invocations` para a regra `awssec-lab03-eventbridge-guardduty-findings` na janela → `Datapoints: []` (zero) — o finding suprimido **nunca chegou ao EventBridge**.
+- `aws guardduty list-filters` → `awssec-lab03-suppress-c2dns`; `get-filter` → `Action: ARCHIVE`, `FindingCriteria` casando `type = Backdoor:EC2/C&CActivity.B!DNS`.
+
+**Causa raiz:** uma suppression rule (`aws guardduty create-filter --action ARCHIVE`) criada de propósito casando o tipo do finding. Findings que batem numa suppression rule são **arquivados automaticamente no momento da geração** e, por consequência, **não são enviados ao EventBridge** — logo, nenhuma regra dispara, nenhuma notificação sai. O registro do finding **continua existindo** (recuperável via `list-findings` com `service.archived = true`), diferente de um `delete`.
+
+**Correção:** `aws guardduty delete-filter --detector-id <id> --filter-name awssec-lab03-suppress-c2dns`. `list-filters` → `FilterNames: []`.
+
+**Validação:** novo `create-sample-findings` do mesmo tipo após remover o filtro → finding aparece na lista default (`archived = false`), `Invocations` da regra volta a incrementar, e-mail volta a chegar.
+
+**Lição:** "não recebi o alerta do GuardDuty" tem pelo menos três causas com diagnóstico distinto: (a) detector/feature desligado — `get-detector`; (b) filtro de severidade na regra do EventBridge (TS-008) — ler o `event_pattern`; (c) suppression rule com `ARCHIVE` — só visível consultando `service.archived = true` e `list-filters`. A pista que aponta especificamente para (c): o finding **não existe** na visão default mas **existe** arquivado, e o EventBridge registra **zero** invocações (em (b) o finding existe e não está arquivado; em (a) não há finding nenhum). Suppression rule é ferramenta legítima para silenciar ruído conhecido sem perder trilha de auditoria — o risco é suprimir mais do que se pretendia.
+
+---
+
+## TS-008 — Falha proposital: finding LOW não gera alerta (filtro de severidade da regra EventBridge)
+
+**Lab:** 03 — GuardDuty, exercício de troubleshooting proposital (ADR-020, cenário B)
+**Status:** ✅ Resolvido (comportamento esperado, não-bug)
+**Evidência:** [evidence/lab03/](../evidence/lab03/)
+
+**Sintoma:** ao desligar o Block Public Access de um bucket S3 (parte do Ataque 2), o GuardDuty gerou o finding `Policy:S3/BucketBlockPublicAccessDisabled`, visível no console e via `list-findings` — mas nenhum e-mail chegou, enquanto o outro finding gerado na mesma sequência (`Policy:S3/BucketAnonymousAccessGranted`, do `put-bucket-policy`) notificou normalmente.
+
+**Investigação:**
+
+1. `aws guardduty get-findings` no finding sem e-mail → `Severity: 2.0` (LOW).
+2. `aws guardduty get-findings` no finding que notificou → `Severity: 8.0` (HIGH).
+3. `aws events describe-rule --name awssec-lab03-eventbridge-guardduty-findings` → `EventPattern` contém `"detail":{"severity":[{"numeric":[">=",4]}]}`.
+
+**Causa raiz:** design deliberado (ADR-018). A regra do EventBridge só encaminha para o SNS findings com `severity >= 4` (MEDIUM+). `Policy:S3/BucketBlockPublicAccessDisabled` é `2.0` (LOW) → não casa o pattern → nunca chega ao tópico → sem e-mail. **Não é bug**: o finding está registrado, íntegro e visível no console; apenas a *notificação* é filtrada, para não afogar o inbox com findings de baixa severidade (`Recon:*`, toggles de config).
+
+**Correção:** nenhuma — comportamento esperado. Se o objetivo mudar (querer visibilidade de LOW por e-mail), baixar `var.finding_severity_threshold` no Terraform do Lab 03 e reaplicar; o custo é mais ruído.
+
+**Lição:** contraste direto com o TS-007. Aqui o finding **existe e não está arquivado** — some só da *notificação*, não do registro. O diagnóstico é ler o `event_pattern` da regra e comparar com a `Severity` do finding. Na prova SCS-C03: "o time não foi alertado sobre um finding" pode ser filtro de severidade no roteamento (o finding está lá, o alerta que não saiu), o que é bem diferente de "o finding não foi gerado". Distinguir "o GuardDuty não detectou" de "o GuardDuty detectou mas o pipeline de notificação filtrou/suprimiu" é meio caminho da resposta.

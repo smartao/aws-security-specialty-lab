@@ -52,7 +52,7 @@ aws-security-specialty-lab/
 |---|---|---|---|
 | 01 | Secure AWS Foundation | Fase 0 — Foundation | ✅ Concluído |
 | 02 | Centralized Logging Foundation | Fase 0 — Foundation | ✅ Concluído |
-| 03 | GuardDuty | Domínio 1 — Detecção | 🔒 Não iniciado |
+| 03 | GuardDuty | Domínio 1 — Detecção | 🚧 Em Andamento |
 | 04 | Security Hub | Domínio 1 — Detecção | 🔒 Não iniciado |
 | 05 | Security Lake + OCSF | Domínio 1 — Detecção | 🔒 Não iniciado |
 | 06 | Security Analytics | Domínio 1 — Detecção | 🔒 Não iniciado |

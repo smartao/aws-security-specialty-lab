@@ -279,11 +279,6 @@ SCS-C03
         └── delegated administrator / multi-account (conceitual → Lab 19)
 ```
 
-## Perguntas de revisão para a certificação
+## Revisão para a certificação
 
-1. **(Múltipla escolha)** Uma equipe habilita o GuardDuty numa conta que **não** tem nenhum trail do CloudTrail configurado. O GuardDuty gera findings baseados em `Recon:IAMUser/*` mesmo assim. Por quê?
-2. **(Múltipla resposta)** Quais afirmações sobre `finding_publishing_frequency` do GuardDuty são verdadeiras? (a) afeta a 1ª entrega de um finding novo ao EventBridge; (b) afeta a entrega de atualizações/reocorrências; (c) valores possíveis: 15 min, 1 h, 6 h; (d) afeta a latência do console.
-3. **(Ordenação)** Coloque em ordem: investigar um finding `Backdoor:EC2/C&CActivity.B!DNS` — (i) correlacionar IP resolvido nos VPC Flow Logs; (ii) `get-findings` para extrair o domínio e a instância; (iii) verificar no CloudTrail o uso da IAM role da instância; (iv) decidir contenção.
-4. **(Correspondência)** Ligue o finding à fonte de dados: `Backdoor:EC2/C&CActivity.B!DNS` ↔ ? · `Policy:S3/BucketAnonymousAccessGranted` ↔ ? · `Recon:IAMUser/MaliciousIPCaller` ↔ ? (opções: DNS query logs, S3 data events, CloudTrail management events)
-5. **(Múltipla escolha)** Um finding esperado não chega por e-mail nem aparece na lista default do console, mas `list-findings` com `service.archived = true` o retorna. Qual a causa mais provável?
-6. **(Múltipla escolha)** Por que exportar findings do GuardDuty para S3 exige uma KMS CMK, e qual a alternativa para agregar findings de várias fontes sem esse export?
+Quiz de revisão (6 perguntas + 1 complementar, formatos variados: múltipla escolha, múltipla resposta, ordenação, correspondência) em [docs/quiz/lab03-exam-review.md](../../../docs/quiz/lab03-exam-review.md) — placar **4,25/6**: nenhum erro na alternativa central de nenhuma questão, mas 3 com *over-selection* (alternativa errada marcada junto da certa). Gap conceitual anotado: `finding_publishing_frequency` — afeta **reocorrências**, não a 1ª entrega, e **nunca** o console.

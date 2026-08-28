@@ -1,6 +1,6 @@
 # Lab 03 — GuardDuty
 
-**Status:** 🟡 Desenho fechado (9 decisões → ADR-015 a ADR-021) e Terraform escrito em `terraform/environments/lab03/` (`fmt` + `validate` limpos). **Pendente:** `terraform apply`, execução dos dois ataques propositais, dos dois cenários de troubleshooting, e coleta de evidências.
+**Status:** ✅ Implementado e validado campo a campo em 2026-08-28. Detector persistente `ENABLED` (`FINDING_PUBLISHING_FREQUENCY = FIFTEEN_MINUTES`), features exatamente as decididas (`S3_DATA_EVENTS` + `EBS_MALWARE_PROTECTION` on; `EKS_AUDIT_LOGS`/`RDS_LOGIN_EVENTS`/`LAMBDA_NETWORK_LOGS`/`RUNTIME_MONITORING` fixadas off — a AWS ligava por default, ver ADR-017). Encanamento EventBridge → SNS → e-mail validado ponta a ponta (`Invocations`/`NumberOfMessagesPublished`). **Dois ataques propositais executados e investigados** (Ataque 1 — DNS C&C, `Backdoor:EC2/C&CActivity.B!DNS` HIGH; Ataque 2 — bucket anônima, `Policy:S3/BucketAnonymousAccessGranted` HIGH). **Dois cenários de troubleshooting executados** (TS-007 suppression rule, TS-008 filtro de severidade). Evidências em [`evidence/lab03/`](../../../evidence/lab03/). Design: 9 decisões → ADR-015 a ADR-021.
 
 ## SCS-C03
 
@@ -116,113 +116,119 @@ O equivalente CLI de cada recurso + o kit de investigação (`get-detector`, `li
 
 ## Testes
 
-_(pendente de `terraform apply`)_ — roteiro:
+Validado campo a campo em 2026-08-28 (o primeiro `apply` foi corrigido — ver ADR-017, atualização):
 
-1. `terraform plan` limpo; `apply` sem erro.
-2. `aws guardduty list-detectors` → 1 detector; `get-detector <id>` → `Status = ENABLED`, `FindingPublishingFrequency = FIFTEEN_MINUTES`.
-3. `aws guardduty list-detector-features` (ou `get-detector`) → `S3_DATA_EVENTS` e `EBS_MALWARE_PROTECTION` `ENABLED`.
-4. `aws sns list-subscriptions-by-topic` → assinatura de e-mail (após confirmar o link, `SubscriptionArn` com ARN real).
-5. `aws events describe-rule --name awssec-lab03-eventbridge-guardduty-findings` → `State = ENABLED`, pattern com `severity >= 4`.
-6. **Teste de encanamento:** `aws guardduty create-sample-findings --detector-id <id> --finding-types 'Backdoor:EC2/C&CActivity.B!DNS'` → e-mail legível (via input transformer) chega em poucos minutos. **Aspas simples obrigatórias** — sem elas o `&` faz o zsh/bash colocar o comando em background e o `!` dispara history expansion, e nada é criado.
-7. `aws ssm get-parameters-by-path --path /lab03 --recursive` → 3 parâmetros.
+1. `terraform apply` — recursos criados sem erro; segundo `apply` adicionou os 4 pins `DISABLED` de feature (0 change, 0 destroy).
+2. `get-detector` → `Status: ENABLED`, `FindingPublishingFrequency: FIFTEEN_MINUTES`.
+3. `get-detector` → features `ENABLED` são **exatamente** `CLOUD_TRAIL`, `DNS_LOGS`, `FLOW_LOGS`, `S3_DATA_EVENTS`, `EBS_MALWARE_PROTECTION` (EKS/RDS/Lambda/Runtime revertidos a `DISABLED`).
+4. `sns list-subscriptions-by-topic` → `sergei.martao@gmail.com` com `SubscriptionArn` real (`...:5ea53fe6-...`), não `PendingConfirmation`.
+5. `events describe-rule` → `State: ENABLED`, pattern `"severity":[{"numeric":[">=",4]}]`; `list-targets-by-rule` → alvo = ARN do tópico SNS.
+6. **Encanamento:** `create-sample-findings --finding-types 'Backdoor:EC2/C&CActivity.B!DNS'` (aspas simples obrigatórias — sem elas o `&` joga o comando pra background e o `!` dispara history expansion no zsh, e nada é criado) → em poucos minutos: `EventBridge Invocations = 1`, `SNS NumberOfMessagesPublished = 1`, `FailedInvocations = []`, e-mail formatado pelo input transformer recebido.
+7. `ssm get-parameters-by-path --path /lab03 --recursive` → 3 parâmetros (`detector_id`, `sns_topic_arn`, `eventbridge_rule_name`).
 
 ## Falha ou ataque proposital
 
-Dois ataques (ADR-020), cada um exercitando um pipeline diferente:
+Dois ataques (ADR-020), executados 2026-08-28. IPs de origem = `168.232.226.99` (estação do operador).
 
 ### Ataque 1 — DNS Command & Control (pipeline de DNS query logs)
 
-Da EC2 do Lab 01, via Session Manager (sem SSH, sem chave):
+Da EC2 do Lab 01 (`i-0a784c2586f40a2e5`), via Session Manager:
 
 ```bash
-aws ssm start-session --target <instance-id>
+aws ssm start-session --target i-0a784c2586f40a2e5
 # dentro da sessão:
-dig guarddutyc2activityb.com          # domínio de teste oficial do GuardDuty
+for i in 1 2 3; do getent hosts guarddutyc2activityb.com; done   # dig/nslookup não instalados na AMI
 ```
 
-**Esperado:** finding `Backdoor:EC2/C&CActivity.B!DNS`, severidade **HIGH (8.0)**, em ~5–15 min → regra EventBridge → e-mail SNS.
+**Resultado:** finding `Backdoor:EC2/C&CActivity.B!DNS` (ID `b8d023e3b299723f3ddd0b9fb26e3805`), **HIGH (8.0)**, `Count: 4` (queries agregadas entre `09:47:30` e `09:47:52 UTC`), `ResourceRole: TARGET`, `Blocked: false`, threat list `Amazon`. E-mail entregue ~09:55 UTC. `Could not resolve host` (NXDOMAIN) **não** impede o finding — o gatilho é a *query* enviada ao resolver da VPC, não uma resolução com sucesso.
 
-### Ataque 2 — Bucket policy anônima (pipeline de S3 data events)
+### Ataque 2 — Bucket policy anônima (pipeline de CloudTrail management events)
 
 ```bash
-# criar uma bucket de teste e anexar policy com Principal "*"
-aws s3api put-bucket-policy --bucket <bucket-teste> --policy '{
-  "Version": "2012-10-17",
-  "Statement": [{
-    "Sid": "PublicRead", "Effect": "Allow", "Principal": "*",
-    "Action": "s3:GetObject", "Resource": "arn:aws:s3:::<bucket-teste>/*"
-  }]
-}'
+BUCKET="awssec-lab03-attack2-${ACCOUNT_ID}"
+aws s3api create-bucket --bucket "$BUCKET" --region us-east-1
+aws s3api put-public-access-block --bucket "$BUCKET" --public-access-block-configuration \
+  BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false
+aws s3api put-bucket-policy --bucket "$BUCKET" --policy '{"Version":"2012-10-17","Statement":[{"Sid":"PublicRead","Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"arn:aws:s3:::'"$BUCKET"'/*"}]}'
 ```
 
-**Esperado:** finding `Policy:S3/BucketAnonymousAccessGranted`, severidade **HIGH** → e-mail.
+Gera **dois** findings:
 
-⚠️ **Nota:** só desligar o Block Public Access (sem policy anônima) dispara `Policy:S3/BucketBlockPublicAccessDisabled`, que é **LOW (2.0)** — abaixo do limiar `severity >= 4`, **não** gera e-mail. Esse é o cenário de troubleshooting B.
+| Ação | Finding | Sev. | E-mail | ID |
+|---|---|---|---|---|
+| `put-public-access-block` | `Policy:S3/BucketBlockPublicAccessDisabled` | 2.0 LOW | ❌ (< 4) → **é o TS-008** | `d2d024f4ca88ca1ac4d4609fdb526383` |
+| `put-bucket-policy` | `Policy:S3/BucketAnonymousAccessGranted` | HIGH | ✅ | `44d024f4cb82589dd7939eb2f400e961` |
+
+O finding HIGH mostra `Api: PutBucketPolicy`, `EffectivePermission: PUBLIC`, `RemoteIP: 168.232.226.99`, `ResourceRole: TARGET`, `Count: 1` — o GuardDuty essencialmente faz *replay* do management event do CloudTrail + avalia o acesso público resultante. Por isso funciona **sem** a feature `S3_DATA_EVENTS` (essa adiciona findings de *data events* object-level, que dependem de baseline — não exercitados neste lab).
 
 ## Detecção e investigação
 
-Roteiro para cada finding (a preencher com saídas reais nas evidências):
+### Ataque 1 — timeline reconstruída (UTC)
 
-1. **Ler o finding:** `aws guardduty get-findings --detector-id <id> --finding-ids <fid>` → dissecar:
-   - `Type`, `Severity`, `Title`
-   - `Service.Action.DnsRequestAction.Domain` (ataque 1) ou `Service.Action.*` conforme o tipo
-   - `Resource.InstanceDetails` — instance ID, IAM role anexada, IPs privado/público
-   - `Service.EventFirstSeen` / `EventLastSeen` / `Count`
-2. **Correlacionar com o Lab 02 (investigação própria):**
-   - **VPC Flow Logs** (CloudWatch Logs Insights) — o host só resolveu o DNS ou chegou a abrir conexão para o IP resolvido? Filtrar pelo IP / pela ENI da instância.
-   - **CloudTrail** — o que a IAM role da instância fez em volta do horário do finding? Algum uso de credencial fora do padrão?
-3. **Lacunas conscientes** (viram labs futuros):
-   - Qual **processo** na instância fez o lookup — GuardDuty não diz sem Runtime Monitoring → **Lab 13**.
-   - DNS query logs consultáveis de forma dedicada → **Lab 06** (Route 53 Resolver query logging).
-   - Grafo de relação entre entidades do finding → **Lab 10** (Detective).
-4. **Concluir:** o quê / quando / qual recurso / origem / impacto (nenhum — domínio de teste / bucket de estudo) / contenção (isolar SG e/ou remover a policy — automação no **Lab 09**).
+| Hora | Evento | Fonte | Ator |
+|---|---|---|---|
+| 09:43:44 | `RunInstances` — a EC2 nasce | CloudTrail (`lookup-events`) | `sergei` (apply Lab 01) |
+| 09:47:14 | `StartSession` em `i-0a784c...` | CloudTrail | `assumed-role/AWSReservedSSO_AdministratorAccess.../sergei` de `168.232.226.99` |
+| 09:47:30 → 09:47:52 | 4× query DNS `guarddutyc2activityb.com` | GuardDuty (`EventFirstSeen`/`LastSeen`/`Count`) | processo na sessão SSM |
+| ~09:55 | finding gerado + e-mail | GuardDuty | — |
+| 10:01:00 | `TerminateInstances` — teardown | CloudTrail | `sergei` |
+
+**Elo-chave:** `StartSession` → primeira query DNS em **16 segundos**. É assim que se amarra atividade suspeita a uma identidade (principal SSO `sergei`, IP `168.232.226.99`).
+
+### Conclusão (6 perguntas)
+
+- **O quê:** a EC2 fez 4 consultas DNS a um domínio de C&C conhecido (threat list "Amazon").
+- **Quando:** 2026-08-28 09:47:30–09:47:52 UTC. `EventFirstSeen` é a hora do fato, não a da entrega.
+- **Qual recurso:** `i-0a784c2586f40a2e5`, subnet `subnet-06330a363e382093c` (privada, sem IP público), SG `awssec-lab01-sg-ec2-app`, profile `awssec-lab01-profile-ec2-app`.
+- **Origem:** sessão SSM interativa aberta pelo principal SSO `sergei` de `168.232.226.99`; a query saiu de um processo dentro dela.
+- **Impacto:** **nenhum** — NXDOMAIN → sem IP → canal de C&C impossível. A role da instância não fez nenhuma chamada de API de controle (`lookup-events` por `Username` da role → vazio). `ResourceRole: TARGET` = o ator no modelo do GuardDuty é o servidor de C&C remoto; a instância é o alvo dessa relação.
+- **Conter/recuperar:** real → isolar SG + snapshot EBS + análise de processo (automação no Lab 09); no lab → `exit` da sessão (nada foi instalado) + instância já terminada.
+
+### Lacunas conscientes / lição do teardown
+
+O ambiente do Lab 01/02 foi destruído no meio da investigação (fim de sessão de estudo, ADR-007). Consequências:
+
+- **VPC Flow Logs — perdidos.** O log group era efêmero (Lab 02). A pergunta "houve conexão de saída após a query?" ficou sem resposta direta (respondida por inferência — NXDOMAIN torna a conexão impossível). Além disso, Flow Logs **não** capturam queries ao resolver da VPC de qualquer forma → GuardDuty as vê pelo pipeline próprio de DNS (Route 53 Resolver), não pelos Flow Logs. Query DNS como log consultável = **Lab 06**.
+- **CloudTrail — recuperável.** `lookup-events` (Event history) é always-on, retém 90 dias de management events, independe do trail destruído. Os logs no S3 (`awssec-logs-230650392331`) são persistentes (ADR-009) e cobrem data events também.
+- **Finding — intacto.** Detector persistente (ADR-015) + retenção de 90 dias. Todo o contexto (instance ID, IPs, profile, subnet, SGs, timestamps, domínio, contagem) está congelado no JSON — investiga-se um finding sobre um recurso que já não existe.
+- **Lição operacional:** evidência volátil se coleta **antes** do teardown. Num incidente real não se destrói o ambiente antes da forense — disciplina do Lab 10.
+
+- Qual **processo** fez o lookup — GuardDuty não diz sem Runtime Monitoring → **Lab 13**.
+- Grafo de entidades do finding → **Lab 10** (Detective).
 
 ## Troubleshooting
 
-Item explícito da lista do `agents.md` ("GuardDuty sem finding esperado"). Processo: sintoma → hipóteses → evidências → causa → correção → validação. A documentar em `docs/troubleshooting.md` (próximos IDs: TS-007, TS-008).
+Item explícito da lista do `agents.md` ("GuardDuty sem finding esperado"). Dois cenários executados 2026-08-28; detalhe completo (sintoma → hipóteses → evidências → causa → correção → validação) em [`docs/troubleshooting.md`](../../../docs/troubleshooting.md).
 
-### Cenário A (principal) — suppression rule arquivando o finding
+| ID | Cenário | Sintoma | Causa | Como se distingue |
+|---|---|---|---|---|
+| **TS-007** | Suppression rule (`aws_guardduty_filter`, `--action ARCHIVE`) casando `Backdoor:EC2/C&CActivity.B!DNS` | Sample gerado, **sem e-mail**, ausente da lista default | Finding **auto-arquivado na geração** → não vai ao EventBridge (`Invocations = []`) | Finding **existe** só com `service.archived=true`; `list-filters` mostra o filtro `ARCHIVE` |
+| **TS-008** | Filtro de severidade da regra EventBridge (`severity >= 4`, ADR-018) | Finding LOW no console, **sem e-mail**; o HIGH irmão notificou | Design deliberado: `Policy:S3/BucketBlockPublicAccessDisabled` = 2.0 < 4 → não casa o pattern | Finding **existe e NÃO está arquivado** — some só da notificação; comparar `Severity` com o `event_pattern` |
 
-1. Criar um filtro/suppression rule (via console ou `aws guardduty create-filter ... --action ARCHIVE`) casando `type = Backdoor:EC2/C&CActivity.B!DNS`.
-2. Rodar o Ataque 1 de novo.
-3. **Sintoma:** nenhum e-mail; o finding não aparece na lista default do console.
-4. **Investigar:** `aws guardduty list-findings --detector-id <id> --finding-criteria '{"Criterion":{"service.archived":{"Eq":["true"]}}}'` → o finding **existe**, mas arquivado. `aws guardduty list-filters` + `get-filter` → a suppression rule com `Action = ARCHIVE`.
-5. **Causa:** suppression rule auto-arquiva o finding; findings arquivados **não** vão para o EventBridge.
-6. **Correção:** `aws guardduty delete-filter` (ou ajustar o critério). Validar re-disparando o ataque.
+Distinção-chave para o SCS-C03: "o time não foi alertado" pode ser **(a)** detector/feature off (`get-detector`), **(b)** filtro de severidade no roteamento — TS-008 (finding existe, não arquivado), ou **(c)** suppression rule — TS-007 (finding existe, arquivado, zero invocações). Cada um se diagnostica diferente. A suppression rule **não** está no Terraform — é passo manual do exercício, removida ao final.
 
-A suppression rule **não** está no Terraform — é passo manual do exercício.
+### Notas de rodapé (não executadas)
 
-### Cenário B (secundário) — filtro de severidade engolindo um finding LOW
-
-1. Só desligar o Block Public Access de uma bucket (sem policy anônima).
-2. **Sintoma:** nenhum e-mail, apesar de haver um finding novo no console.
-3. **Investigar:** o finding é `Policy:S3/BucketBlockPublicAccessDisabled`, `Severity = 2.0` (LOW). O `event_pattern` da regra EventBridge exige `severity >= 4`.
-4. **Causa:** design deliberado (ADR-018) — LOW não notifica. Não é bug.
-5. **Correção:** nenhuma (comportamento esperado) — ou baixar `finding_severity_threshold` se o objetivo mudar.
-
-### Notas de rodapé (C e D)
-
-- **C — região errada:** `list-findings` em `us-west-2` enquanto o detector e o finding estão em `us-east-1`. GuardDuty é regional.
-- **D — latência de reocorrência:** com `finding_publishing_frequency` alta (default AWS 6 h), a **reocorrência** de um finding demora a chegar ao EventBridge. Por isso o Lab usa `FIFTEEN_MINUTES`.
+- **Região errada:** `list-findings` em `us-west-2` com o detector/finding em `us-east-1` — GuardDuty é regional.
+- **Latência de reocorrência:** `finding_publishing_frequency` alta (default AWS 6 h) atrasa a **reocorrência** ao EventBridge. Por isso o lab usa `FIFTEEN_MINUTES`.
 
 ## Remediação
 
-_(pendente — a documentar junto com TS-007/TS-008)_
-
-- **Ataque 1:** remover qualquer persistência na instância; no cenário real, isolar via SG (Lab 09). No lab, encerrar a sessão SSM basta (nada foi instalado).
-- **Ataque 2:** `aws s3api delete-bucket-policy --bucket <bucket-teste>` (ou remover a statement anônima) e deletar a bucket de teste.
-- **Troubleshooting A:** `delete-filter` da suppression rule.
+- **Ataque 1:** nada instalado na instância → `exit` da sessão SSM; instância já terminada no teardown. Real: isolar SG + snapshot + rotacionar credenciais da role (automação no Lab 09).
+- **Ataque 2:** `aws s3api delete-bucket-policy --bucket <bucket>` + `aws s3 rb s3://<bucket> --force`.
+- **TS-007:** `aws guardduty delete-filter --detector-id <id> --filter-name awssec-lab03-suppress-c2dns` → `list-filters` → `FilterNames: []`. Confirmado.
+- **TS-008:** nenhuma correção — comportamento esperado (ADR-018).
 
 ## Evidências
 
-Pasta [evidence/lab03/](../../../evidence/lab03/) — a coletar:
+Pasta [evidence/lab03/](../../../evidence/lab03/):
 
-- Saída de `get-detector` e `list-detector-features` pós-apply.
-- E-mail do sample finding (encanamento).
-- `get-findings` JSON do `Backdoor:EC2/C&CActivity.B!DNS` real + screenshot do console.
-- `get-findings` JSON do `Policy:S3/BucketAnonymousAccessGranted` + screenshot.
-- TS-007 (suppression rule): `list-findings` com `service.archived = true` + `get-filter`.
-- TS-008 (filtro de severidade): finding LOW no console sem e-mail correspondente.
+- `finding-c2dns-real.json` — `get-findings` do `Backdoor:EC2/C&CActivity.B!DNS` real (ID `b8d023e3...`).
+- `finding-s3-anonymous.json` — `get-findings` do `Policy:S3/BucketAnonymousAccessGranted` (ID `44d024f4...`).
+- `guardduty-public-bucket-email.png` / `guardduty-public-bucket-console.png` — e-mail (input transformer) + console do finding S3 HIGH.
+- Timeline do `lookup-events` (Ataque 1) + saídas de validação do encanamento (`Invocations`, `NumberOfMessagesPublished`).
+- TS-007: `list-findings` com `service.archived=true` retornando o sample suprimido + `get-filter` (`Action: ARCHIVE`) + `Invocations = []`.
+- TS-008: finding LOW `Policy:S3/BucketBlockPublicAccessDisabled` (sev 2.0) no console, sem e-mail correspondente.
 
 ## Custos e cleanup
 

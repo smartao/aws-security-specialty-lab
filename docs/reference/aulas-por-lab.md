@@ -51,8 +51,8 @@ Aulas já assistidas (pré-requisito dos labs de Detecção):
 - ✅ 8. Amazon GuardDuty - Advanced
 
 **Apoio / revisão**
-- ⚠️ 24. Amazon EventBridge / 25. Amazon EventBridge - Hands On *(roteamento de findings)*
-- ⚠️ 32. CloudTrail - EventBridge Integration *(revisão do Lab 02)*
+- ✅ 24. Amazon EventBridge / 25. Amazon EventBridge - Hands On *(roteamento de findings)*
+- ✅ 32. CloudTrail - EventBridge Integration *(revisão do Lab 02)*
 
 ### Lab 04 — Security Hub
 **Núcleo**

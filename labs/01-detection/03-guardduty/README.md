@@ -223,9 +223,9 @@ Distinção-chave para o SCS-C03: "o time não foi alertado" pode ser **(a)** de
 
 Pasta [evidence/lab03/](../../../evidence/lab03/):
 
-- `finding-c2dns-real.json` — `get-findings` do `Backdoor:EC2/C&CActivity.B!DNS` real (ID `b8d023e3...`).
-- `finding-s3-anonymous.json` — `get-findings` do `Policy:S3/BucketAnonymousAccessGranted` (ID `44d024f4...`).
-- `guardduty-public-bucket-email.png` / `guardduty-public-bucket-console.png` — e-mail (input transformer) + console do finding S3 HIGH.
+- `ts-007-guardduty-cc-dns-finding.json` — `get-findings` do `Backdoor:EC2/C&CActivity.B!DNS` real (ID `b8d023e3...`).
+- `ts-008-guardduty-s3-anonymous-access-finding.json` — `get-findings` do `Policy:S3/BucketAnonymousAccessGranted` (ID `44d024f4...`).
+- `ts-008-guardduty-sns-s3-anonymous-access-email.png` / `ts-008-guardduty-console-s3-severity-contrast.png` — e-mail (input transformer) + console do finding S3 HIGH.
 - Timeline do `lookup-events` (Ataque 1) + saídas de validação do encanamento (`Invocations`, `NumberOfMessagesPublished`).
 - TS-007: `list-findings` com `service.archived=true` retornando o sample suprimido + `get-filter` (`Action: ARCHIVE`) + `Invocations = []`.
 - TS-008: finding LOW `Policy:S3/BucketBlockPublicAccessDisabled` (sev 2.0) no console, sem e-mail correspondente.

@@ -311,6 +311,8 @@ Implementado com `aws_guardduty_detector` enxuto + um `aws_guardduty_detector_fe
 
 **Trade-offs:** S3 + Malware adicionam superfície mínima de custo (centavos + US$0-idle) em troca de dois pipelines de detecção a mais e dois cenários de ataque exercitáveis. Runtime Monitoring daria a detecção de EC2 mais forte (visibilidade de processo/arquivo/rede no SO), mas puxa gestão de agente — melhor no lab que estuda isso.
 
+**Atualização (2026-08-27) — descoberto na validação pós-apply:** um detector novo do GuardDuty **não nasce "só com a base"** — a AWS liga por default quase todos os protection plans. Depois do primeiro `apply`, `get-detector` mostrou `EKS_AUDIT_LOGS`, `RDS_LOGIN_EVENTS` e `LAMBDA_NETWORK_LOGS` também como `ENABLED`, sem que o Terraform os tivesse tocado (e os nossos `aws_guardduty_detector_feature` para `S3_DATA_EVENTS`/`EBS_MALWARE_PROTECTION` foram, na prática, no-ops — já vinham on). Custo real hoje = US$0 (não há EKS/RDS/Lambda na conta para analisar), mas (a) contraria a decisão de habilitar cada plano no lab que o estuda, e (b) viraria cobrança silenciosa quando o Lab 09 criar Lambda e o Lab 18 criar RDS. **Correção:** adicionados pins explícitos `status = "DISABLED"` para `EKS_AUDIT_LOGS`, `RDS_LOGIN_EVENTS`, `LAMBDA_NETWORK_LOGS` e `RUNTIME_MONITORING` — o Terraform agora é um enunciado completo do estado desejado das features, não só do delta. Lição SCS-C03: ao habilitar um serviço de detecção, sempre verificar o que ele liga por default (princípio de menor funcionalidade).
+
 ---
 
 ## ADR-018 — Roteamento de findings: EventBridge → SNS/e-mail (severity ≥ 4); automação de resposta no Lab 09

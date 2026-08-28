@@ -140,8 +140,10 @@ aws ssm get-parameters-by-path --path /lab03 --recursive
 ### Teste de encanamento (sample findings — fabricados, mas passam pela regra igual aos reais)
 
 ```bash
+# ASPAS SIMPLES obrigatórias em cada tipo: o "&" sem aspas joga o comando pra
+# background e o "!" dispara history expansion no zsh/bash — sem aspas, nada é criado.
 aws guardduty create-sample-findings --detector-id "$DETECTOR_ID" \
-  --finding-types Backdoor:EC2/C&CActivity.B!DNS Policy:S3/BucketAnonymousAccessGranted
+  --finding-types 'Backdoor:EC2/C&CActivity.B!DNS' 'Policy:S3/BucketAnonymousAccessGranted'
 # aguarde alguns minutos -> e-mail legível deve chegar
 ```
 

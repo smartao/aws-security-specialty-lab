@@ -1,0 +1,111 @@
+{
+    "Findings": [
+        {
+            "AccountId": "230650392331",
+            "Arn": "arn:aws:guardduty:us-east-1:230650392331:detector/d593d513663747f894b5875b0c29d581/finding/b8d023e3b299723f3ddd0b9fb26e3805",
+            "CreatedAt": "2026-08-28T09:50:45.042Z",
+            "Description": "The EC2 instance i-0a784c2586f40a2e5 is querying a domain name associated with a known Command & Control server.",
+            "Id": "b8d023e3b299723f3ddd0b9fb26e3805",
+            "Partition": "aws",
+            "Region": "us-east-1",
+            "Resource": {
+                "InstanceDetails": {
+                    "AvailabilityZone": "us-east-1a",
+                    "IamInstanceProfile": {
+                        "Arn": "arn:aws:iam::230650392331:instance-profile/awssec-lab01-profile-ec2-app",
+                        "Id": "AIPATLM6VV4F3FM3OJE6T"
+                    },
+                    "ImageDescription": "Canonical, Ubuntu, 24.04, amd64 noble image",
+                    "ImageId": "ami-052355af2a014bd2c",
+                    "InstanceId": "i-0a784c2586f40a2e5",
+                    "InstanceState": "running",
+                    "InstanceType": "t3.micro",
+                    "LaunchTime": "2026-08-28T09:43:44.000Z",
+                    "NetworkInterfaces": [
+                        {
+                            "Ipv6Addresses": [],
+                            "NetworkInterfaceId": "eni-0fc43ffd11740303a",
+                            "PrivateDnsName": "ip-10-0-11-59.ec2.internal",
+                            "PrivateIpAddress": "10.0.11.59",
+                            "PrivateIpAddresses": [
+                                {
+                                    "PrivateDnsName": "ip-10-0-11-59.ec2.internal",
+                                    "PrivateIpAddress": "10.0.11.59"
+                                }
+                            ],
+                            "SecurityGroups": [
+                                {
+                                    "GroupId": "sg-00b155de10dfb65a6",
+                                    "GroupName": "awssec-lab01-sg-ec2-app"
+                                }
+                            ],
+                            "SubnetId": "subnet-06330a363e382093c",
+                            "VpcId": "vpc-0f45d062e6b271724"
+                        }
+                    ],
+                    "ProductCodes": [],
+                    "Tags": [
+                        {
+                            "Key": "Environment",
+                            "Value": "study"
+                        },
+                        {
+                            "Key": "Name",
+                            "Value": "awssec-lab01-ec2-app-a"
+                        },
+                        {
+                            "Key": "Lab",
+                            "Value": "lab01"
+                        },
+                        {
+                            "Key": "ManagedBy",
+                            "Value": "terraform"
+                        },
+                        {
+                            "Key": "Project",
+                            "Value": "aws-security-specialty-lab"
+                        }
+                    ]
+                },
+                "ResourceType": "Instance"
+            },
+            "SchemaVersion": "2.0",
+            "Service": {
+                "Action": {
+                    "ActionType": "DNS_REQUEST",
+                    "DnsRequestAction": {
+                        "Domain": "guarddutyc2activityb.com",
+                        "Protocol": "UDP",
+                        "Blocked": false,
+                        "DomainWithSuffix": "guarddutyc2activityb.com",
+                        "VpcOwnerAccountId": "230650392331"
+                    }
+                },
+                "Evidence": {
+                    "ThreatIntelligenceDetails": [
+                        {
+                            "ThreatListName": "Amazon",
+                            "ThreatNames": []
+                        }
+                    ]
+                },
+                "Archived": false,
+                "Count": 4,
+                "DetectorId": "d593d513663747f894b5875b0c29d581",
+                "EventFirstSeen": "2026-08-28T09:47:30.000Z",
+                "EventLastSeen": "2026-08-28T09:47:52.000Z",
+                "ResourceRole": "TARGET",
+                "ServiceName": "guardduty",
+                "AdditionalInfo": {
+                    "Value": "{\"threatListName\":\"Amazon\"}",
+                    "Type": "default"
+                },
+                "FeatureName": "DnsQueryLogs"
+            },
+            "Severity": 8.0,
+            "Title": "The EC2 instance i-0a784c2586f40a2e5 queried a known Command & Control server domain name.",
+            "Type": "Backdoor:EC2/C&CActivity.B!DNS",
+            "UpdatedAt": "2026-08-28T09:51:07.001Z"
+        }
+    ]
+}

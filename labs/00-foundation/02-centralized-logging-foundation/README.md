@@ -158,6 +158,10 @@ terraform destroy (environments/lab02/)
                      (fora do state, ver docs/setup-log-bucket-bootstrap.md)
 ```
 
+## Revisão para a certificação
+
+Quiz de revisão (4 perguntas, formatos variados: múltipla escolha, múltipla resposta, ordenação, correspondência) em [docs/quiz/lab02-exam-review.md](../../../docs/quiz/lab02-exam-review.md) — placar 3,5/4, com o gap anotado (generalizar "o log bucket sobrevive" para "state isolation entre labs" como princípio).
+
 ## Relação com SCS-C03
 
 ```text

@@ -243,3 +243,146 @@ Criado via CLI, fora do state de qualquer lab (mesmo padrão do bucket de backen
 **Alternativas consideradas:** tratá-lo com a mesma persistência do log bucket.
 
 **Trade-offs:** nenhum — resultado de query é trivialmente regenerável reexecutando a mesma query contra o log bucket persistente. Não há razão para pagar o custo operacional extra de mantê-lo fora do state.
+
+---
+
+## ADR-015 — Detector do GuardDuty é persistente, fora do ciclo de destroy/recreate
+
+**Lab:** 03 — GuardDuty
+**Status:** Aceito
+
+**Contexto:** o padrão do projeto (ADR-007) é `terraform destroy` da infraestrutura ao final de toda sessão de estudo, para não sangrar o teto de custo (US$100 / 6 meses). Essa regra existe por causa de recursos que cobram só por existir — o NAT Gateway do Lab 01 (~US$32/mês). O detector do GuardDuty não é assim: é grátis de existir, e todo o custo do serviço é proporcional ao **volume analisado** (management events, VPC Flow Logs, DNS query logs). Com a EC2 do Lab 01 parada entre sessões, esse volume cai para quase nada.
+
+**Decisão:** o detector do GuardDuty é **persistente** — aplicado uma vez e mantido de pé, fora do ciclo de destroy/recreate por sessão. `terraform destroy` só ao encerrar os estudos.
+
+**Alternativas consideradas:** detector efêmero, recriado a cada sessão junto com o resto do lab.
+
+**Trade-offs:**
+
+- O gatilho de custo do ADR-007 não se aplica — manter o detector ligado 24/7 custa ~US$0 enquanto não há atividade para analisar.
+- **Baseline de ML preservado.** Findings de anomalia comportamental (`UnauthorizedAccess:IAMUser/InstanceCredentialExfiltration`, `Discovery:S3/AnomalousBehavior`, os "AnomalousBehavior" em geral) dependem de um modelo de comportamento que leva ~7–14 dias para se formar por detector. Recriar o detector zera esse baseline. Findings de threat-intel / assinatura (`Backdoor:EC2/C&CActivity.B!DNS`, `CryptoCurrency:*`, IP malicioso conhecido, Tor) não dependem de baseline e disparam na hora mesmo em detector novo — mas são só parte da cobertura.
+- **Detector ID estável.** Recriar geraria um `detectorId` novo a cada sessão, com churn no SSM `/lab03/detector_id` e em tudo que os Labs 04/09/10 amarrarem nele.
+- **O trial de 30 dias não reseta** ao reabilitar — não há economia nenhuma em destruir/recriar, só perda de histórico e de baseline.
+
+---
+
+## ADR-016 — Lab 03 inteiro num único root module persistente, sem ciclo de destroy
+
+**Lab:** 03
+**Status:** Aceito
+
+**Contexto:** decidido o detector persistente (ADR-015), restava definir o layout Terraform: manter o resto do Lab 03 (regra EventBridge, tópico SNS, roles) no ciclo de destroy/recreate e isolar só o detector, ou tratar o lab inteiro como persistente.
+
+**Decisão:** **todo o Lab 03** vive num único root module `terraform/environments/lab03/` (state próprio, key `lab03/terraform.tfstate`, mesmo backend bucket `awssec-tfstate-230650392331`), **persistente**, sem ciclo de destroy por sessão. Aplicado uma vez; `terraform destroy` só ao encerrar os estudos.
+
+**Alternativas consideradas:**
+
+- **(B)** Detector via bootstrap CLI, fora de qualquer state (padrão do log bucket, ADR-009) + o resto num `lab03/` efêmero.
+- **(C)** Dois states Terraform: `lab03-foundation/` persistente + `lab03/` efêmero.
+
+**Trade-offs:** nenhuma peça do Lab 03 cobra por ficar de pé — regra EventBridge, tópico SNS, assinatura e roles IAM são todos gratuitos. Inventar um ciclo de `destroy` para eles seria cerimônia sem economia, e (B)/(C) espalhariam o lab por 2–3 diretórios/states sem ganho. Opção (A) também mantém o cleanup de fim de estudos trivial (um único `terraform destroy`). **Efeito colateral positivo:** como não há ciclo destroy/apply, a classe de bug do TS-005 (assinatura SNS de e-mail perdida no ciclo) não existe no Lab 03 — a confirmação do link só é feita uma vez.
+
+**Consequência para o SSM:** o Lab 03 **não lê** nenhum parâmetro SSM do Lab 01/02 — o GuardDuty tem pipeline de dados próprio e não depende dos destinos de log do Lab 02. Só o exercício de ataque proposital precisa da EC2 do Lab 01 no ar. Por isso o Lab 03 **não entra** no `scripts/manage-foundation.sh`.
+
+---
+
+## ADR-017 — Protection plans: S3 + EBS Malware agora; Runtime, RDS, Lambda adiados
+
+**Lab:** 03
+**Status:** Aceito
+
+**Contexto:** o GuardDuty base já analisa CloudTrail management events, VPC Flow Logs e DNS query logs sem config e sem custo além do volume. Em cima disso há *protection plans* opcionais, cada um com pipeline e cobrança próprios.
+
+**Decisão:** habilitar, além da base:
+
+- **S3 Protection** (`S3_DATA_EVENTS`) — analisa S3 data events (`Policy:S3/BucketAnonymousAccessGranted`, `Discovery:S3/AnomalousBehavior`, `Exfiltration:S3/*`). Custo ~US$0,80/milhão de eventos → centavos no volume de estudo. Serve direto o cenário `attack-scenarios/public-s3/` e dá um trigger barato e determinístico (ADR-020).
+- **Malware Protection for EC2** (`EBS_MALWARE_PROTECTION`) — snapshot + scan agentless do EBS em findings suspeitos de EC2. Custo US$0 enquanto nenhum scan dispara; ~US$0,05/GB (~US$0,40 para um volume de 8 GB) quando dispara. Deixa a capacidade pronta para os Labs 08/10.
+
+Implementado com `aws_guardduty_detector` enxuto + um `aws_guardduty_detector_feature` por plano (forma da AWS provider v6; os blocos `datasources {}` no recurso monolítico estão *deprecated*).
+
+**Não habilitados, de propósito:**
+
+| Plano | Adiado para | Motivo |
+|---|---|---|
+| Runtime Monitoring (`RUNTIME_MONITORING`) | Lab 13 — Secure Compute | É sobre agente via SSM / hardening — tema formal do Lab 13. Custo ~US$1,50/vCPU/mês pró-rata. |
+| RDS Protection (`RDS_LOGIN_EVENTS`) | Lab 18 | Não há RDS ainda. |
+| Lambda Protection (`LAMBDA_NETWORK_LOGS`) | Lab 09/13 | Não há Lambda ainda. |
+| EKS Protection (`EKS_AUDIT_LOGS`) | — | Fora do escopo do projeto (sem EKS). |
+
+**Trade-offs:** S3 + Malware adicionam superfície mínima de custo (centavos + US$0-idle) em troca de dois pipelines de detecção a mais e dois cenários de ataque exercitáveis. Runtime Monitoring daria a detecção de EC2 mais forte (visibilidade de processo/arquivo/rede no SO), mas puxa gestão de agente — melhor no lab que estuda isso.
+
+---
+
+## ADR-018 — Roteamento de findings: EventBridge → SNS/e-mail (severity ≥ 4); automação de resposta no Lab 09
+
+**Lab:** 03
+**Status:** Aceito
+
+**Contexto:** findings do GuardDuty já caem no EventBridge (`source = aws.guardduty`, `detail-type = "GuardDuty Finding"`) sem config — falta uma regra + alvo para agir. O `agents.md` reserva a **resposta automatizada** (Lambda isola SG, tira snapshot, taggeia) para o Lab 09 — Automated Incident Response.
+
+**Decisão:** o Lab 03 constrói só a camada de **notificação a um humano** — mesmo padrão do alarme de root usage do Lab 02:
+
+- Regra EventBridge com `event_pattern` filtrando `detail.severity` por `{ "numeric": [ ">=", 4 ] }` (default MEDIUM+; parametrizável via `var.finding_severity_threshold`).
+- Alvo: tópico SNS → assinatura por e-mail (`var.finding_notification_email`, mesmo padrão `terraform.tfvars` gitignored do Lab 02).
+- *Input transformer* na regra para o e-mail sair legível (tipo, severidade, região, recurso, finding ID, link do console) em vez de JSON cru.
+- Tópico SNS + nome da regra publicados no SSM (`/lab03/sns_topic_arn`, `/lab03/eventbridge_rule_name`) — o Lab 09 pendura a automação aqui.
+- `finding_publishing_frequency = "FIFTEEN_MINUTES"` no detector: a primeira ocorrência de um finding sempre vai ao EventBridge em ~5 min, mas as **reocorrências** seguem esse parâmetro (default AWS = 6 h). 15 min (o mínimo) evita que um re-teste na mesma sessão pareça não gerar nada.
+
+**Escolha do limiar MEDIUM+ (≥ 4):** num inbox real, findings LOW (`Recon:*`, `Policy:S3/BucketBlockPublicAccessDisabled` a 2,0) viram ruído — a tendência seria subir o filtro de qualquer jeito. Tudo continua visível no console e via `list-findings`; só o e-mail é filtrado. O filtro engolindo um finding LOW é, ele próprio, um caso de troubleshooting (ADR-020, cenário B).
+
+**Alternativas consideradas:** notificar a partir de LOW (mais pedagógico num lab, ruidoso demais no geral); já montar um esqueleto de automação (EventBridge → Lambda no-op) no Lab 03 (descartado — mistura escopo do Lab 09).
+
+**Trade-offs:** regra EventBridge + SNS por e-mail são gratuitos. A fronteira "notificação aqui / automação no Lab 09" mantém cada lab com um foco, ao custo de o Lab 09 precisar ler o tópico/regra do Lab 03 via SSM (já é o padrão do projeto).
+
+---
+
+## ADR-019 — Sem export de findings para S3 no Lab 03 (KMS CMK adiado para o Lab 17)
+
+**Lab:** 03
+**Status:** Aceito
+
+**Contexto:** o GuardDuty pode exportar findings para uma bucket S3, o que dá retenção além dos 90 dias que o console guarda e permite consulta histórica via Athena / Security Lake. Mas o export **exige uma KMS CMK** (chave gerenciada pelo cliente, com key policy dando `kms:GenerateDataKey` ao GuardDuty) — SSE-S3 e chave AWS-managed não são aceitas. É a mesma parede do ADR-013 no log bucket do Lab 02.
+
+**Decisão:** **sem export para S3 no Lab 03.** Findings vivem no console (janela móvel de 90 dias) + fluem pelo EventBridge. O export com CMK entra no **Lab 17** (KMS + Encryption), junto com a migração do log bucket para SSE-KMS.
+
+**Alternativas consideradas:** criar uma CMK dedicada agora só para viabilizar o export.
+
+**Trade-offs:** 90 dias de retenção de findings são suficientes para o ritmo de estudo, e o Security Hub (Lab 04) ingere findings do GuardDuty direto pela integração de serviço, sem depender do export para S3. Antecipar a CMK quebraria o princípio de progressão do projeto (construir a camada de KMS no lab que a estuda). Revisitar no Lab 17; se o Lab 05/06 precisar de findings históricos antes disso, adianta-se lá.
+
+---
+
+## ADR-020 — Ataque proposital duplo + dois cenários de troubleshooting
+
+**Lab:** 03
+**Status:** Aceito
+
+**Contexto:** o lab precisa de um evento **real** (não só `create-sample-findings`) para exercitar o ciclo detectar → investigar, e de um cenário de "GuardDuty sem o finding esperado" (item explícito da lista de troubleshooting do `agents.md`). O limiar de e-mail é MEDIUM+ (ADR-018), então o gatilho precisa gerar um finding ≥ 4.
+
+**Decisão — dois ataques propositais:**
+
+1. **DNS C&C** — `dig guarddutyc2activityb.com` da EC2 do Lab 01 via Session Manager → `Backdoor:EC2/C&CActivity.B!DNS` (HIGH, 8.0). Usa o pipeline de DNS query logs; exige que a EC2 resolva pelo resolver da VPC (default). Custo ~US$0. É o gatilho principal.
+2. **Bucket policy anônima** — aplicar numa bucket uma policy com `Principal: "*"` + `s3:GetObject` → `Policy:S3/BucketAnonymousAccessGranted` (HIGH). Exercita o S3 Protection do ADR-017 e conecta com `attack-scenarios/public-s3/`.
+   - ⚠️ Só desligar o Block Public Access dispara `Policy:S3/BucketBlockPublicAccessDisabled` (LOW, 2,0) — abaixo do limiar, não gera e-mail. Por isso o gatilho é a policy anônima, não o toggle de BPA.
+
+**Decisão — dois cenários de troubleshooting:**
+
+- **A (principal) — suppression rule / filtro arquivando o finding.** Criar um `aws_guardduty_filter` (ou filtro no console) com `action = ARCHIVE` casando `Backdoor:EC2/C&CActivity.B!DNS`, rodar o gatilho, observar que nenhum e-mail chega e o finding aparece como *archived*. Investigar "o finding existe mas está arquivado, por quê?" → achar a suppression rule. Ensina suppression rules (tópico pesado no exame). A regra **não** fica no Terraform — é passo manual do exercício (documentado no `cli-reference`).
+- **B (secundário) — filtro de severidade engolindo um finding LOW.** Desligar só o BPA de uma bucket (finding LOW 2,0), notar que nenhum e-mail chega, e rastrear a causa até o `event_pattern` `severity >= 4` da regra EventBridge. Custo zero, amarra numa config que já é nossa.
+- C (região errada — `list-findings` em `us-west-2` com o detector em `us-east-1`) e D (`finding_publishing_frequency` alta atrasando reocorrência) ficam como nota de rodapé no README.
+
+**Trade-offs:** dois ataques cobrem dois pipelines distintos (DNS query logs vs S3 data events) ao custo de um lab um pouco menos enxuto. Um só (DNS C&C) bastaria para o ciclo, mas deixaria o S3 Protection do ADR-017 sem exercício próprio.
+
+---
+
+## ADR-021 — GuardDuty multi-account / delegated administrator: conceitual no Lab 03, implementação no Lab 19
+
+**Lab:** 03
+**Status:** Aceito
+
+**Contexto:** a conta 230650392331 já é management de uma AWS Organization (`o-23e9438ykt`, criada ao ativar o IAM Identity Center — ver ADR-007). O GuardDuty suporta *delegated administrator* + auto-enable para contas da org, e a estratégia multi-account é conteúdo de exame (aula 7 do curso). Mas **só há uma conta** — montar delegated admin "para si mesmo" é mecânica sem nenhum member.
+
+**Decisão:** o Lab 03 cobre multi-account / delegated admin **só conceitualmente** no README (modelo administrator/member, `enable-organization-admin-account`, auto-enable, por que centralizar findings de várias contas). A **implementação real** acontece no **Lab 19 — Multi-Account Security Governance**, quando existirem contas member de verdade.
+
+**Alternativas consideradas:** rodar um `enable-organization-admin-account` simbólico agora.
+
+**Trade-offs:** consistente com como o projeto adia a profundidade de Organizations para o Lab 19. Um gesto simbólico agora não teria nada para administrar e só adicionaria estado para limpar depois.

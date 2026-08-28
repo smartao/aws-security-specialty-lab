@@ -1,0 +1,15 @@
+[
+    {
+        "Type": "Policy:S3/BucketAnonymousAccessGranted",
+        "Severity": 8.0,
+        "ResourceRole": "TARGET",
+        "Bucket": "awssec-lab03-attack2-230650392331",
+        "EffectivePerm": "PUBLIC",
+        "ViaPolicy": null,
+        "Api": "PutBucketPolicy",
+        "Caller": "Remote IP",
+        "RemoteIP": "168.232.226.99",
+        "FirstSeen": "2026-08-28T19:40:07.000Z",
+        "Count": 1
+    }
+]

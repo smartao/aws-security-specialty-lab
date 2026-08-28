@@ -7,7 +7,7 @@
 **Janela do finding:** `EventFirstSeen` 2026-08-28T09:47:30Z → `EventLastSeen` 2026-08-28T09:47:52Z (`Count` = 4)
 
 Depois de ler o finding (`get-findings`, JSON em
-[`guardduty-cc-dns-finding.json`](guardduty-cc-dns-finding.json)), a investigação própria
+[`ts-007-guardduty-cc-dns-finding.json`](ts-007-guardduty-cc-dns-finding.json)), a investigação própria
 usa o CloudTrail do Lab 02 para responder: **quem** estava na instância, **o que** mais
 aconteceu na janela, e se a **credencial da role** da instância foi usada.
 
@@ -93,7 +93,7 @@ movimentação lateral nem escalonamento a partir da role da instância.
 ## Conclusão
 
 | Pergunta | Resposta |
-|---|---|
+| --- | --- |
 | **O quê** | Query DNS para `guarddutyc2activityb.com` (domínio de C2 conhecido), 4 ocorrências em 22 s |
 | **Quando** | 2026-08-28T09:47:30Z – 09:47:52Z |
 | **Qual recurso** | EC2 `i-0a784c2586f40a2e5` (subnet `subnet-06330a363e382093c`, SG `awssec-lab01-sg-ec2-app`) |

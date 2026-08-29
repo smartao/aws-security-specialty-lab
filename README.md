@@ -40,7 +40,7 @@ aws-security-specialty-lab/
 │   ├── 05-data-protection/            # Labs 17-18
 │   └── 06-governance/                 # Labs 19-20
 ├── capstones/                         # Desafios finais 01-02
-├── attack-scenarios/                  # Cenários de ataque simulados
+├── attack-scenarios/                  # Roteiros de ataque reutilizáveis (visão do atacante)
 ├── runbooks/                          # Runbooks de incident response
 ├── evidence/                          # Screenshots, outputs, findings
 └── docs/                              # Security design, threat model, decisions, troubleshooting

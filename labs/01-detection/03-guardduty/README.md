@@ -130,6 +130,8 @@ Validado campo a campo em 2026-08-28 (o primeiro `apply` foi corrigido — ver A
 
 Dois ataques (ADR-020), executados 2026-08-28. IPs de origem = `168.232.226.99` (estação do operador).
 
+> **Roteiro genérico e reutilizável** de cada um em [`attack-scenarios/`](../../../attack-scenarios/): [`compromised-ec2`](../../../attack-scenarios/compromised-ec2/README.md) (Ataque 1, fase C2/DNS) e [`public-s3`](../../../attack-scenarios/public-s3/README.md) (Ataque 2). Abaixo, o registro do que foi executado **neste** lab.
+
 ### Ataque 1 — DNS Command & Control (pipeline de DNS query logs)
 
 Da EC2 do Lab 01 (`i-0a784c2586f40a2e5`), via Session Manager:

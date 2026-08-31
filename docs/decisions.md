@@ -336,6 +336,8 @@ Implementado com `aws_guardduty_detector` enxuto + um `aws_guardduty_detector_fe
 
 **Trade-offs:** regra EventBridge + SNS por e-mail são gratuitos. A fronteira "notificação aqui / automação no Lab 09" mantém cada lab com um foco, ao custo de o Lab 09 precisar ler o tópico/regra do Lab 03 via SSM (já é o padrão do projeto).
 
+**Atualização (2026-08-31) — notificação a humano consolidada no Security Hub (Lab 04, ADR-027):** o Lab 04 torna o Security Hub o ponto único de agregação e roteamento de findings. A responsabilidade de *notificar um humano* sai desta regra: `var.direct_guardduty_notification_enabled` (default `false` a partir de agora) desliga o alvo de e-mail, aplicado com um `terraform apply` no próprio state do Lab 03. A regra passa a existir para o **Lab 09** religar como **gatilho de automação latência-crítica** (alvo = Lambda de contenção, não e-mail) — rotear pelo Security Hub adiciona ~minutos de ingestão, inaceitável para "isolar o SG em segundos". Os parâmetros `/lab03/sns_topic_arn` e `/lab03/eventbridge_rule_name` continuam publicados; o Lab 09 lê esses **+** os novos `/lab04/*`. O limiar `severity ≥ 4` (evento nativo do GuardDuty, `severity` float 0–10) segue válido para o cano direto; o cano agregado do Lab 04 filtra o evento ASFF do Security Hub por `Severity.Label`.
+
 ---
 
 ## ADR-019 — Sem export de findings para S3 no Lab 03 (KMS CMK adiado para o Lab 17)
@@ -390,3 +392,184 @@ Implementado com `aws_guardduty_detector` enxuto + um `aws_guardduty_detector_fe
 **Alternativas consideradas:** rodar um `enable-organization-admin-account` simbólico agora.
 
 **Trade-offs:** consistente com como o projeto adia a profundidade de Organizations para o Lab 19. Um gesto simbólico agora não teria nada para administrar e só adicionaria estado para limpar depois.
+
+---
+
+## ADR-022 — Escopo e produto do Lab 04: CSPM completo, sobre o Security Hub CSPM clássico
+
+**Lab:** 04 — Security Hub
+**Status:** Aceito
+
+**Contexto:** "Security Hub" faz duas coisas distintas — (a) agregar/normalizar findings de vários serviços num painel único (ASFF), (b) CSPM: rodar *security checks* contínuos contra *standards* (FSBP/CIS/PCI/NIST) com *security score* e detecção de drift de postura. A segunda depende de um AWS Config recorder rodando e cobra por check + por configuration item, sem Free Tier (a conta perdeu — ADR-007). Além disso, em 2 dez 2025 (re:Invent) a AWS deu GA num **novo "AWS Security Hub" unificado** (schema OCSF, APIs v2, *exposure findings* correlacionando GuardDuty + Inspector + CSPM); o serviço original virou **"AWS Security Hub CSPM"**, plenamente suportado, sem timeline de deprecação.
+
+**Decisão:**
+
+1. O Lab 04 faz **CSPM completo** (standards + Config mínimo), não só agregação. Adiar a postura para o Lab 20 deixaria as habilidades 1.1.5 e 6.3.1 sem prática hands-on e sobrecarregaria o Lab 20 (já o lab mais denso do roadmap).
+2. A base é o **Security Hub CSPM clássico**, gerido por Terraform (`aws_securityhub_*` = APIs v1). O Hub unificado v2 não tem suporte estável no provider AWS (issue aberta hashicorp/terraform-provider-aws#46352) e sua mecânica (OCSF / exposure findings) é mais nova que o guia do exame SCS-C03 v1.0.
+3. O Hub novo entra como **seção conceitual** no README (o split de dez/2025, OCSF vs ASFF, v2 APIs, por que o lab usa CSPM) + um toggle CLI manual opcional no `cli-reference` (selo "não executada"), fora do fluxo core. Implementação real (central configuration multi-conta) → **Lab 19**, mesmo tratamento da ADR-021.
+
+**Alternativas consideradas:**
+
+- Security Hub como **agregador puro** (sem standards, sem Config): custo de checks ≈ US$0, mas perde score / drift / ciclo `FAILED → PASSED` — exatamente o que diferencia o Security Hub do "EventBridge + SNS" que o Lab 03 já montou. Empurraria ~metade da superfície de exame do serviço para um lab que não a ensina naturalmente.
+- Basear o lab no **Hub unificado novo**: sem Terraform (CLI / `awscc` / `null_resource`), v2 imaturo, antecipa conteúdo além do exame atual.
+
+**Trade-offs:** CSPM completo adiciona custo medido (checks + Config CIs) que a opção agregador-puro não tem — mitigado pela engenharia das ADR-023/ADR-024 (só FSBP, escopo restrito de Config, stack persistente com custo ocioso ≈ 0). Em troca, o Lab 04 cobre de fato gestão de postura, e o aprendizado transfere: no modelo novo, o CSPM é a fonte do sinal de postura que o Hub unificado correlaciona.
+
+---
+
+## ADR-023 — Ciclo de vida do Lab 04: persistente, com recursos-espécime próprios
+
+**Lab:** 04
+**Status:** Aceito
+
+**Contexto:** decidido o CSPM completo (ADR-022), os *security controls* do FSBP precisam de **recursos existentes** para avaliar — sem recurso relevante, o control fica `NO_DATA`. A fundação (Lab 01) sobe/desce por sessão (ADR-007) e tem o NAT Gateway como custo dominante. Amarrar o Lab 04 ao `manage-foundation.sh up` significaria pagar NAT + rajada de configuration items do Config toda vez que se quisesse tocar no lab.
+
+**Decisão:**
+
+- **Todo o Lab 04 é persistente** — root module único `terraform/environments/lab04/` (key `lab04/terraform.tfstate`), aplicado uma vez, `terraform destroy` só ao encerrar os estudos. **Não entra** no `scripts/manage-foundation.sh`. Mesmo racional da ADR-016: nenhuma peça (Security Hub, Config recorder, EventBridge, SNS, aggregator, Inspector enabler) cobra relevante por ficar de pé com a fundação parada.
+- O Lab 04 mantém **recursos-espécime próprios e persistentes**, deliberadamente mínimos e "graváveis": 1 bucket S3, 1 security group num `aws_vpc` pelado (`10.4.0.0/28`, sem subnets/IGW/NAT). São o alvo determinístico e sempre-presente dos controls e do ataque proposital (ADR-028). `EC2.13` avalia security groups independente de anexação, então um SG solto num VPC vazio serve.
+- Quando a fundação estiver no ar (sessões de outros labs), o Config a grava e o Security Hub também a avalia — de graça, sem config extra. Ou seja, opção B que naturalmente vira B+C.
+
+**Alternativas consideradas:**
+
+- Avaliar só contra a fundação do Lab 01 (A): realista, mas acopla o Lab 04 ao ciclo caro da fundação e ao NAT Gateway.
+- EC2 / ECR-espécime com imagem vulnerável (C): puxa ECR / containers (tema do Lab 13) e uma EC2 persistente (~US$7,5/mês ligada) para dentro do Lab 04.
+
+**Trade-offs:** os espécimes adicionam ~US$0/mês (bucket + VPC vazia + SG) e um punhado de resources para manter, em troca de um Lab 04 **auto-contido** (como o detector do Lab 03) e independente do NAT Gateway.
+
+---
+
+## ADR-024 — AWS Config no Lab 04: recorder contínuo, escopo restrito, entrega no log bucket
+
+**Lab:** 04
+**Status:** Aceito
+
+**Contexto:** os standards do Security Hub CSPM são quase inertes sem um AWS Config recorder rodando — a maioria dos controls FSBP é lastreada por Config managed rules que o Security Hub provisiona sozinho, mas que só avaliam se o Config estiver gravando o tipo de recurso. Config cobra ~US$0,003 por configuration item (us-east-1) + ~US$0,001 por avaliação de rule, sem Free Tier. O Lab 20 é o lab formal de AWS Config (rules próprias, conformance packs, remediação, aggregators).
+
+**Decisão:**
+
+- O Lab 04 sobe um Config **mínimo**: `aws_config_configuration_recorder` + `aws_config_delivery_channel` + `aws_config_configuration_recorder_status`.
+- **Gravação contínua**, com `recording_group` **restrito** aos ~10–15 tipos que os controls FSBP dos espécimes (ADR-023) e da fundação usam (`AWS::S3::Bucket`, `AWS::EC2::SecurityGroup`, `AWS::EC2::Volume`, `AWS::EC2::Instance`, `AWS::IAM::Role`/`User`/`Policy`, `AWS::CloudTrail::Trail`, `AWS::GuardDuty::Detector`, `AWS::EC2::VPC`, ...), **não** "todos os tipos suportados". Inclui os *global resource types* (IAM) nesta região, já que é a única.
+- **Sem SNS** do Config — o caminho de notificação é Security Hub → EventBridge (ADR-027), não o stream de mudanças do Config.
+- Entrega no **log bucket persistente já existente** (`awssec-logs-<account_id>`, ADR-009), construindo o nome a partir do account ID (sem hardcode). O statement de bucket policy para `config.amazonaws.com` (`s3:PutObject` com `bucket-owner-full-control`, `s3:GetBucketAcl`, `s3:GetBucketPolicy`) é adicionado ao `docs/setup/setup-log-bucket-bootstrap.md` como passo manual **antes** do `terraform apply` do lab04 — senão o delivery channel falha no apply. Mesmo padrão do statement do CloudTrail (bucket é bootstrap, fora de qualquer state).
+
+**Alternativas consideradas:**
+
+- **Gravação diária/periódica**: economiza ~US$0,15–0,30/sessão na escala de um punhado de espécimes, mas atrasa o loop `FAILED → corrijo → PASSED` em até 24 h (contornável com `start-config-rules-evaluation`, mas é fricção pedagógica). A alavanca de custo real é o **escopo de tipos** + stack persistente (idle ≈ 0) + só FSBP, não diário-vs-contínuo.
+- **Gravar todos os tipos**: rajada de CIs real quando a fundação sobe/desce, sem ganho.
+- **Bucket dedicado de Config**: mais infra nova; um bucket só de trilhas de auditoria é mais simples e barato (um lifecycle só).
+
+**Trade-offs:** escopo restrito pode fazer um control novo aparecer como `NO_DATA` se seu tipo não estiver na lista — de propósito, é a semente do **TS-009**. Fronteira explícita: Lab 04 = recorder + delivery + standards; Lab 20 = rules próprias, conformance packs, remediação SSM, aggregators, regras organizacionais, construídos por cima deste recorder.
+
+---
+
+## ADR-025 — Amazon Inspector: scan de EC2 no Lab 04, resto no Lab 13
+
+**Lab:** 04
+**Status:** Aceito
+
+**Contexto:** o material do curso põe Inspector no núcleo do Lab 04 ("findings de Inspector agregam no Security Hub"), mas o Lab 13 (Secure Compute) é o lab formal — loop *assess → harden → patch → validate*, Patch Manager, Image Builder, ECR. Sem Inspector, o Lab 04 exercita agregação com só duas formas de finding (ameaça = GuardDuty, misconfig = controls FSBP).
+
+**Decisão:** habilitar **só o scan de EC2** via `aws_inspector2_enabler` (`resource_types = ["EC2"]`), **persistente**, pegando carona na EC2 da fundação — mesmo padrão da ADR-015 (detector do GuardDuty): custo ≈ US$0 quando não há EC2; quando a fundação sobe, o Inspector escaneia a instância (já é *managed instance* no SSM desde o Lab 03) e os findings de vulnerabilidade (CVE, CVSS, pacote, fix) fluem **automaticamente** para o Security Hub (integração nativa, sem `product_subscription`). Terceira forma de finding no lab: vulnerabilidade.
+
+**Alternativas consideradas:**
+
+- **Adiar tudo para o Lab 13** (A): Lab 04 mais enxuto, mas perde a forma "vulnerabilidade" no exercício de agregação/priorização.
+- **EC2 + ECR com repositório-espécime** (C): CVE determinístico sempre disponível, mas puxa build/push de imagem e ECR (tema do Lab 13) para o Lab 04.
+
+**Trade-offs:** cobrança pró-rata por hora (~US$0,002/instância/hora → sessão de 3 h ≈ US$0,006, desprezível). O CVE só existe quando a fundação está no ar — aceitável, porque os findings de CSPM dos espécimes (ADR-023) e os do GuardDuty (retenção 90 d) cobrem o conjunto sempre-disponível. Lab 13 mantém o loop profundo e herda um Security Hub já pronto para os findings.
+
+---
+
+## ADR-026 — Agregação cross-Region e multi-account no Lab 04
+
+**Lab:** 04
+**Status:** Aceito
+
+**Contexto:** o Security Hub CSPM é regional; a *finding aggregation* designa uma home region e replica findings das regiões linkadas para lá (`aws_securityhub_finding_aggregator`). Tudo no projeto roda em us-east-1. A conta é management da org `o-23e9438ykt` mas **sem contas member** — a ADR-021 já resolveu multi-account do GuardDuty como conceitual no Lab 03, real no Lab 19.
+
+**Decisão:**
+
+- Configurar `aws_securityhub_finding_aggregator` com `linking_mode = "ALL_REGIONS"`, home = us-east-1. Um recurso, **custo zero** (só se paga *checks* nas regiões onde o Hub está habilitado, e só habilitamos us-east-1). Diferente do gesto simbólico que a ADR-021 rejeitou, o aggregator **muda comportamento de fato** (define home region e linking mode) e é o que se configura no dia 1 de um deployment real.
+- Delegated administrator / auto-enable / **central configuration** (configuration policies) = **conceitual no README** (modelo administrator/member, `EnableOrganizationAdminAccount`, policies vs. configuração local). Implementação real → **Lab 19**.
+
+**Alternativas consideradas:** pular o aggregator (não há outra região em jogo — cerimônia); habilitar o Hub numa 2ª região para cobrir evasão multi-region (2× custo de checks, não vale no teto de orçamento).
+
+**Trade-offs:** o aggregator sozinho, sem outras regiões habilitadas, não replica nada hoje — mas custa zero e deixa a home region definida se o cenário crescer. Cobertura multi-region efetiva e multi-account ficam para o Lab 19.
+
+---
+
+## ADR-027 — Roteamento de findings: dois canos (automação direta + notificação agregada via Security Hub)
+
+**Lab:** 04
+**Status:** Aceito
+
+**Contexto:** o Lab 03 montou `EventBridge (aws.guardduty, severity ≥ 4) → SNS → e-mail`, com o Lab 09 planejado para pendurar a resposta automatizada aí (ADR-018). Agora o Security Hub agrega GuardDuty + Inspector + CSPM e emite eventos próprios (`Security Hub Findings - Imported`, `Security Hub Findings - Custom Action`). Manter a regra direta do Lab 03 **e** rotear os findings importados do Security Hub geraria **notificação dupla** para todo finding do GuardDuty.
+
+**Decisão — dois canos com funções distintas:**
+
+- **Cano direto (Lab 03, reproposto):** a regra `GuardDuty → EventBridge` deixa de notificar humano. Vira o **gatilho de automação latência-crítica** do Lab 09 (alvo = Lambda de contenção, tipicamente HIGH+), porque rotear via Security Hub adiciona ~minutos de ingestão — inaceitável para "isolar o SG em segundos". Controlada por `var.direct_guardduty_notification_enabled = false` no state do Lab 03 (aplicado com um `terraform apply` no Lab 03; ver atualização da ADR-018).
+- **Cano agregado (Lab 04, novo):** regra EventBridge em `Security Hub Findings - Imported`, filtrada por `Severity.Label ∈ {MEDIUM, HIGH, CRITICAL}` **+** `Workflow.Status = NEW` **+** `RecordState = ACTIVE` → tópico SNS `awssec-lab04-sns-securityhub-findings` → e-mail, com input transformer. É o **caminho de notificação a humano** para todas as fontes. Mais um `aws_securityhub_action_target` (*custom action* "Escalar") → evento `Security Hub Findings - Custom Action` → mesmo SNS, para triagem manual do console.
+- **SSM:** o Lab 04 publica `/lab04/securityhub_sns_topic_arn`, `/lab04/securityhub_eventbridge_rule_name`, `/lab04/custom_action_arn`. O Lab 09 passa a ler esses **+** a regra direta do Lab 03.
+
+**Detalhe técnico:** o evento do Security Hub é ASFF — filtra por `Severity.Label` / `Severity.Normalized` (0–100), diferente do `severity` float 0–10 do evento nativo do GuardDuty. Ponto de ensino e de troubleshooting.
+
+**Alternativas consideradas:**
+
+- **Cano único via Security Hub** (A): desabilitar a regra do Lab 03, tudo por uma regra só. Mais limpo ("single pane"), mas cega a automação de contenção rápida do Lab 09 (latência de ingestão).
+- **Dois canos independentes** (C): regra do Lab 03 intacta + regra do Lab 04 excluindo GuardDuty por `ProductName`. Filtro "exclui GuardDuty" é anti-padrão e o inbox nunca vê o painel unificado.
+
+**Trade-offs:** mais peças móveis e um acoplamento operacional cross-lab (re-aplicar o Lab 03 com o toggle) — a única exceção consciente ao princípio de labs desacoplados —, em troca da arquitetura honesta (caminho rápido para automação, Security Hub para a visão do analista) e de um Lab 09 que aprende os dois padrões de gatilho.
+
+---
+
+## ADR-028 — Ataque proposital + cenários de troubleshooting do Lab 04
+
+**Lab:** 04
+**Status:** Aceito
+
+**Contexto:** o lab precisa de um evento **real** (não só `create-sample-findings` / control já-`FAILED`) que exercite o que o Security Hub acrescenta sobre o Lab 03 — agregação de várias fontes, priorização, o ciclo de vida `FAILED → remediar → PASSED`, e o roteamento da ADR-027. O `threat-model.md` aponta o alvo: "sem detecção de postura contínua — bucket que ficou público, SG que abriu 0.0.0.0/0 → Lab 04".
+
+**Decisão — ataque proposital (deriva de postura em 2 passos, nos espécimes da ADR-023):**
+
+| Passo | Ação (CLI, "atacante") | Acende | Control |
+|---|---|---|---|
+| 1 | SG do espécime aceita `0.0.0.0/0:22` | 1 finding CSPM | `EC2.13` |
+| 2 | bucket do espécime público (BPA off + policy `Principal:"*"`) | 1 finding CSPM **+** 1 finding GuardDuty `Policy:S3/BucketAnonymousAccessGranted` (pipeline de CloudTrail management events — mecânica do Lab 03) | `S3.1` / `S3.8` |
+
+Somado ao CVE do Inspector na EC2 da fundação (ADR-025), já presente, isso dá **N findings de 3 produtos** no mesmo painel. Exercita `get-findings` com filtros ASFF, queda do *security score*, triagem por `Workflow.Status`, o e-mail agregado da ADR-027 nos MEDIUM+, e depois **remediação → controls voltam a `PASSED` → score recupera**. O passo 2 repete de propósito o ataque 2 do Lab 03 — a mesma misconfig gerando dois findings de fontes diferentes, agregados.
+
+**Sub-exercício — tamper (`GuardDuty.1` "GuardDuty should be enabled"):** desabilitar o **detector inteiro** brevemente (`update-detector --no-enable`), de olhos abertos, re-habilitar na hora. Lição: um atacante com credenciais cega o sensor e o Security Hub pega pela postura. Risco ao baseline de ML da ADR-015 aceito como baixo (janela de segundos; baseline de anomalia não vem sendo cultivado; findings de threat-intel não dependem dele). Documentado.
+
+**Decisão — troubleshooting (continua a numeração do Lab 03; TS-007/008):**
+
+- **TS-009 — "Standard habilitado, todos os controls em `NO_DATA`".** Causa: o Config recorder não grava aquele tipo de recurso — consequência direta do escopo restrito da ADR-024. Diagnóstico: `describe-configuration-recorder-status`, `describe-configuration-recorders` (`recordingGroup`), control com `ComplianceStatus: NO_DATA`. Correção: iniciar recorder / adicionar o tipo.
+- **TS-010 — "Automation rule não suprimiu (ou suprimiu demais)".** Paralelo do TS-007. Uma `aws_securityhub_automation_rule` (criada **manualmente** no exercício, fora do Terraform — como a suppression filter do Lab 03) com `Criteria` estreita demais (não dispara) ou larga demais (engole finding crítico), ou `RuleOrder` / `IsTerminal` interrompendo o processamento. Diagnóstico: `RuleOrder`, `Criteria`, `IsTerminal`, `Workflow.Status` + `NoteUpdatedBy`. Fecha o laço com a ADR-027: finding com `Workflow.Status = SUPPRESSED` não casa o filtro da regra → não gera e-mail (esperado, não bug — como o TS-008).
+
+**Notas de rodapé (não viram cenário próprio):** "corrigi mas continua `FAILED`" (latência de reavaliação vs. recurso ainda não-conforme num detalhe vs. confusão control-`PASSED` × finding-`Workflow.Status`); finding do GuardDuty ausente no Security Hub (integração off ou região errada).
+
+**Trade-offs:** dois ataques (SG + bucket) cobrem CSPM puro e a interseção CSPM × GuardDuty ao custo de um passo a mais; o TS-009 nasce do próprio design do lab (escopo do Config), o TS-010 do próprio roteamento.
+
+---
+
+## ADR-029 — Layout Terraform / SSM do Lab 04
+
+**Lab:** 04
+**Status:** Aceito
+
+**Contexto:** definir a estrutura de código, seguindo a ADR-004 (backend/SSM) e a ADR-016 (root module persistente por lab).
+
+**Decisão:**
+
+- Root module `terraform/environments/lab04/`, backend S3 key `lab04/terraform.tfstate` (bucket `awssec-tfstate-230650392331`, `use_lockfile`), provider `aws ~> 6.0`, `required_version >= 1.10`, `default_tags { Lab = "lab04" }`, `aws_profile` default `sergei-upstart`.
+- Arquivos: `versions.tf`, `provider.tf`, `variables.tf`, `data.tf`, `config.tf`, `securityhub.tf`, `inspector.tf`, `routing.tf`, `specimens.tf`, `ssm.tf`, `outputs.tf`.
+- `data.tf` **não lê `/lab03/*`** — a integração GuardDuty → Security Hub é via serviço, não via Terraform (mesma independência do Lab 03 em relação ao Lab 01/02). Log bucket referenciado como `awssec-logs-${data.aws_caller_identity.current.account_id}`.
+- `securityhub.tf`: `aws_securityhub_account` (`control_finding_generator = "SECURITY_CONTROL"` — consolidated control findings; `auto_enable_controls = true`) + `aws_securityhub_standards_subscription` **só FSBP** + `aws_securityhub_finding_aggregator` (ADR-026).
+- **FSBP habilitado inteiro no início** (ver o score cru + o ruído é instrutivo); depois curar uma **disable-list pequena como passo do lab**, essa gerida no Terraform via `aws_securityhub_standards_control_association`.
+- A `aws_securityhub_automation_rule` do TS-010 **não vai no Terraform** — passo manual do exercício (padrão do Lab 03).
+- `ssm.tf` publica `/lab04/{securityhub_hub_arn, config_recorder_name, finding_aggregator_arn, securityhub_sns_topic_arn, securityhub_eventbridge_rule_name, custom_action_arn}`. `finding_notification_email` em `terraform.tfvars` gitignored (padrão Labs 02/03).
+- **Não entra** no `scripts/manage-foundation.sh`.
+
+**Alternativas consideradas:** ler o detector do Lab 03 via SSM (desnecessário — integração automática); pôr a automation rule no TF (esconde o exercício de troubleshooting); habilitar CIS junto do FSBP (mais checks/ruído sem ganho pedagógico no dia 1 — CIS fica como exercício de comparação posterior).
+
+**Trade-offs:** consistente com a estrutura dos Labs 01–03. O acoplamento cross-lab da ADR-027 (toggle no Lab 03) é a única exceção ao princípio de labs desacoplados, aceita conscientemente por ser explícita e correta.

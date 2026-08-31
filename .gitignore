@@ -40,7 +40,7 @@ terraform.rc
 # *.dot
 
 # Sergei
-models
 plan.out
 plan.txt
 AWS-Certified-Security-Specialty-Slides-v29.pdf
+*.un~

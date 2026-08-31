@@ -1,8 +1,8 @@
 # Setup — Log Bucket (bucket S3 persistente para CloudTrail + VPC Flow Logs)
 
 **Lab:** 02 — mas o bucket não pertence ao ciclo de vida do lab (persistente, ver [ADR-009](decisions.md#adr-009--log-bucket-persistente-fora-do-state-do-lab-02))
-**Relacionado:** [ADR-009](decisions.md#adr-009--log-bucket-persistente-fora-do-state-do-lab-02), [ADR-013](decisions.md#adr-013--encryption-sse-s3-no-log-bucket-cmk-adiado-para-o-lab-17)
-**Status:** ✅ Executado e validado via CLI campo a campo em 2026-08-25.
+**Relacionado:** [ADR-009](decisions.md#adr-009--log-bucket-persistente-fora-do-state-do-lab-02), [ADR-013](decisions.md#adr-013--encryption-sse-s3-no-log-bucket-cmk-adiado-para-o-lab-17), [ADR-024](decisions.md#adr-024--aws-config-no-lab-04-recorder-contínuo-escopo-restrito-entrega-no-log-bucket)
+**Status:** ✅ Executado e validado via CLI campo a campo em 2026-08-25. ⏳ **Amendment do Lab 04 (seção 8) — pendente de aplicação** (statement do AWS Config, adicionado ao design em 2026-08-31).
 
 ## Objetivo
 
@@ -187,6 +187,57 @@ aws s3api put-bucket-policy \
 
 Se o nome do trail mudar no Terraform do Lab 02, esta policy precisa ser atualizada manualmente (é fora do state — não há `terraform plan` para avisar da divergência).
 
+### 8. Amendment (Lab 04, [ADR-024](decisions.md#adr-024--aws-config-no-lab-04-recorder-contínuo-escopo-restrito-entrega-no-log-bucket)) — statement do AWS Config ⏳ pendente
+
+O Lab 04 entrega o histórico do **AWS Config** neste mesmo bucket (recorder de escopo restrito, ADR-024). O `aws_config_delivery_channel` do Terraform do Lab 04 (`terraform/environments/lab04/config.tf`) **falha no `apply`** com `InsufficientDeliveryPolicyException` se a bucket policy não autorizar `config.amazonaws.com` **antes**. Mesmo padrão das statements de CloudTrail/Flow Logs acima — o bucket é bootstrap, fora de qualquer state, então isto é passo manual.
+
+Adicionar estas 3 statements ao array `Statement` do `log-bucket-policy.json` (antes da `DenyInsecureTransport`, que deve permanecer por último) e reaplicar:
+
+```json
+{
+  "Sid": "AWSConfigBucketPermissionsCheck",
+  "Effect": "Allow",
+  "Principal": { "Service": "config.amazonaws.com" },
+  "Action": "s3:GetBucketAcl",
+  "Resource": "arn:aws:s3:::awssec-logs-230650392331",
+  "Condition": { "StringEquals": { "aws:SourceAccount": "230650392331" } }
+},
+{
+  "Sid": "AWSConfigBucketExistenceCheck",
+  "Effect": "Allow",
+  "Principal": { "Service": "config.amazonaws.com" },
+  "Action": "s3:ListBucket",
+  "Resource": "arn:aws:s3:::awssec-logs-230650392331",
+  "Condition": { "StringEquals": { "aws:SourceAccount": "230650392331" } }
+},
+{
+  "Sid": "AWSConfigBucketDelivery",
+  "Effect": "Allow",
+  "Principal": { "Service": "config.amazonaws.com" },
+  "Action": "s3:PutObject",
+  "Resource": "arn:aws:s3:::awssec-logs-230650392331/AWSLogs/230650392331/Config/*",
+  "Condition": {
+    "StringEquals": {
+      "s3:x-amz-acl": "bucket-owner-full-control",
+      "aws:SourceAccount": "230650392331"
+    }
+  }
+}
+```
+
+```bash
+aws s3api put-bucket-policy \
+  --bucket awssec-logs-230650392331 \
+  --policy file://log-bucket-policy.json \
+  --profile sergei-upstart
+```
+
+**Prefixo de entrega:** `AWSLogs/230650392331/Config/` — o Terraform do Lab 04 **não** define `s3_key_prefix` no delivery channel, então o Config usa o path padrão. Se um `s3_key_prefix` for adicionado depois, o `Resource` da statement `AWSConfigBucketDelivery` passa a `<prefix>/AWSLogs/230650392331/Config/*`.
+
+**`aws:SourceAccount` em vez de `aws:SourceArn`:** o principal `config.amazonaws.com` é a conta inteira (um recorder por região/conta), não um recurso com ARN previsível — mesma razão das statements de Flow Logs.
+
+Marcar esta seção como ✅ executada quando a policy for reaplicada, antes do primeiro `terraform apply` do Lab 04.
+
 ## Validação (CLI)
 
 ```bash
@@ -203,5 +254,6 @@ aws s3api get-bucket-tagging --bucket awssec-logs-230650392331 --profile sergei-
 ## Regras de convivência com este bucket
 
 - **Nunca** roda `terraform destroy` do Lab 02 esperando que ele alcance este bucket — ele está fora do state do lab (mesma regra do bucket de backend).
-- Estrutura de prefixo dentro do bucket: `AWSLogs/230650392331/CloudTrail/...` e `AWSLogs/230650392331/vpcflowlogs/...` (path padrão usado pelos serviços de entrega da AWS) — Lab 06 (Athena) vai apontar para esses prefixos.
+- Estrutura de prefixo dentro do bucket: `AWSLogs/230650392331/CloudTrail/...`, `AWSLogs/230650392331/vpcflowlogs/...` e `AWSLogs/230650392331/Config/...` (path padrão usado pelos serviços de entrega da AWS) — Lab 06 (Athena) vai apontar para esses prefixos.
+- O `terraform destroy` do Lab 04 remove o recorder/delivery channel do Config, **não** este bucket nem os objetos já entregues. Se o Lab 04 for removido de vez, a statement do Config na policy pode ser retirada manualmente (opcional — não custa nada deixar).
 - Se o Lab 02 (Terraform) for destruído e recriado com um nome de trail diferente de `awssec-lab02-trail`, a bucket policy precisa ser reaplicada manualmente com o novo `aws:SourceArn` antes do próximo `terraform apply` criar o trail — senão a entrega do CloudTrail falha silenciosamente por falta de permissão no bucket.

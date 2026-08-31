@@ -16,7 +16,7 @@ ficam junto da aula conceitual correspondente.
 
 ---
 
-## Fase 0 — Foundation (concluída)
+## Fase 0 — Foundation ✅
 
 ### Lab 01 — Secure AWS Foundation ✅
 Sem aula direta do curso (backend Terraform, VPC, IAM Identity Center, budgets).
@@ -24,26 +24,26 @@ Base conceitual: 143–144 (IMDS), 92–93 (NACL/SG), 87 (VPC Endpoints), 138 (S
 
 ### Lab 02 — Centralized Logging Foundation ✅
 Aulas já assistidas (pré-requisito dos labs de Detecção):
-- ⚠️ 14. Logging in AWS for Security and Compliance
-- ⚠️ 15. CloudWatch - Unified CloudWatch Agent - Overview
-- ⚠️ 17. CloudWatch - Unified CloudWatch Agent - Hands On
-- ⚠️ 18. CloudWatch Unified Agent - Troubleshooting
-- ⚠️ 19. CloudWatch Logs / 20. CloudWatch Logs Hands On
-- ⚠️ 21. CloudWatch Alarms / 22. CloudWatch Alarms Hands On
-- ⚠️ 23. CloudWatch Contributor Insights
-- ⚠️ 29. CloudTrail / 30. CloudTrail Hands On
-- ⚠️ 31. CloudTrail - Data Lake
-- ⚠️ 32. CloudTrail - EventBridge Integration
-- ⚠️ 33. CloudTrail for SysOps
-- ⚠️ 34. CloudTrail to CloudWatch Metrics Filter - Example
-- ⚠️ 35. CloudTrail - Integration with Athena
-- ⚠️ 36. Monitoring Account Activity
+- ✅ 14. Logging in AWS for Security and Compliance
+- ✅ 15. CloudWatch - Unified CloudWatch Agent - Overview
+- ✅ 17. CloudWatch - Unified CloudWatch Agent - Hands On
+- ✅ 18. CloudWatch Unified Agent - Troubleshooting
+- ✅ 19. CloudWatch Logs / 20. CloudWatch Logs Hands On
+- ✅ 21. CloudWatch Alarms / 22. CloudWatch Alarms Hands On
+- ✅ 23. CloudWatch Contributor Insights
+- ✅ 29. CloudTrail / 30. CloudTrail Hands On
+- ✅ 31. CloudTrail - Data Lake
+- ✅ 32. CloudTrail - EventBridge Integration
+- ✅ 33. CloudTrail for SysOps
+- ✅ 34. CloudTrail to CloudWatch Metrics Filter - Example
+- ✅ 35. CloudTrail - Integration with Athena
+- ✅ 36. Monitoring Account Activity
 
 ---
 
 ## Domínio 1 — Detecção (Labs 03–07)
 
-### Lab 03 — GuardDuty
+### Lab 03 — GuardDuty ✅
 **Núcleo**
 - ✅ 5. Amazon GuardDuty
 - ✅ 6. Amazon GuardDuty - Findings & Automation
@@ -56,13 +56,13 @@ Aulas já assistidas (pré-requisito dos labs de Detecção):
 
 ### Lab 04 — Security Hub
 **Núcleo**
-- ⚠️ 9. Security Hub Overview
-- ⚠️ 10. Security Hub - Advanced
-- ⚠️ 13. Amazon Inspector *(findings de Inspector agregam no Security Hub)*
+- ✅ 9. Security Hub Overview
+- ✅ 10. Security Hub - Advanced
+- ✅ 13. Amazon Inspector *(findings de Inspector agregam no Security Hub)*
 
 **Apoio / revisão**
-- ⚠️ 5–6. GuardDuty *(fonte de findings — feito no Lab 03)*
-- ⚠️ 227. AWS Config - Remediation Examples *(prévia; Config completo no Lab 20)*
+- ✅ 5–6. GuardDuty *(fonte de findings — feito no Lab 03)*
+- ✅ 227. AWS Config - Remediation Examples *(prévia; Config completo no Lab 20)*
 
 ### Lab 05 — Security Lake + OCSF
 > O curso **não tem aula dedicada a Security Lake**. Assistir as aulas de consulta/consolidação

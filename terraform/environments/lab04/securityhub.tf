@@ -27,8 +27,17 @@ resource "aws_securityhub_account" "main" {
 # Único standard do Lab 04: AWS Foundational Security Best Practices, INTEIRO.
 # Ver o score cru + o ruído é instrutivo (ADR-029); a curadoria vem depois, via
 # var.fsbp_disabled_controls.
+#
+# timeouts.create = 30m: a habilitação INICIAL do FSBP provisiona centenas de
+# controls + as Config managed rules que os lastreiam; o default do provider
+# (3 min) estoura antes de a subscription sair de PENDING para READY/INCOMPLETE.
+# Não é erro de config — só lentidão de primeira habilitação.
 resource "aws_securityhub_standards_subscription" "fsbp" {
   standards_arn = local.fsbp_standard_arn
+
+  timeouts {
+    create = "30m"
+  }
 
   depends_on = [aws_securityhub_account.main]
 }
